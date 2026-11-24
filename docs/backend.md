@@ -90,3 +90,10 @@ Production refuses to start without the signature, and the app checks the image 
 | `QUOTE_VALID_DAYS` (30), `INVOICE_DUE_DAYS` (7), `DEPOSIT_PERCENT` (50), `VAT_RATE_BP` (1500) | Defaults in brackets |
 
 `GET /api/finance/readiness` lists anything still missing without ever returning the values.
+
+## Client IP addresses and sign-in limits
+
+- `X-Forwarded-For` is read from the **right**: each proxy appends the address it received the request from, so only the last `TRUSTED_PROXY_HOPS` entries (Render: 1) were written by our infrastructure. Anything to the left was sent by the caller and is ignored. Missing or invalid values fall back to the connecting address. uvicorn runs with `--no-proxy-headers`, so it never trusts the header blindly.
+- If the IP recorded on offer acceptances ever shows a Render-internal address after deploying, raise `TRUSTED_PROXY_HOPS` to 2.
+- On top of the per-IP limits, each account locks for `LOGIN_LOCKOUT_MINUTES` (15) after `LOGIN_FAILURES_PER_ACCOUNT` (10) failed sign-ins, whatever IP they come from. It applies the same way to unknown emails, so it reveals nothing about which accounts exist. At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account.
+- These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one.

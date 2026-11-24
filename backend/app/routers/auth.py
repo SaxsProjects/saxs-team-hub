@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user, login_limiter, require_admin_any
+from ..deps import current_user, login_failures, login_limiter, require_admin_any, reset_requests
 from ..emailer import OutgoingEmail, send_email
 from ..models import ActionToken, User
 from ..schemas import (
@@ -38,17 +38,35 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    settings = get_settings()
+    email = body.email.lower()
+    window = settings.login_lockout_minutes * 60
+    # Per-account limit: applies to every email (existing or not), so it reveals nothing about accounts
+    # and cannot be avoided by changing IP address.
+    if login_failures.blocked(email, settings.login_failures_per_account, window):
+        audit(db, "anonymous", "auth.login_locked", "user", None)
+        db.commit()
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Too many failed sign-ins for this account. Try again in {settings.login_lockout_minutes} minutes.",
+        )
+
+    def fail(detail: str) -> HTTPException:
+        login_failures.hit(email, window)
+        return HTTPException(status.HTTP_401_UNAUTHORIZED, detail)
+
+    user = db.scalar(select(User).where(User.email == email))
     if not user:
         burn_password_check(body.password)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")
+        raise fail("Wrong email or password")
     if not user.is_active or not verify_password(user.password_hash, body.password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")
+        raise fail("Wrong email or password")
     if user.totp_enabled:
         if not body.totp_code:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
         if not verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong two-factor code")
+            raise fail("Wrong two-factor code")
+    login_failures.reset(email)
     user.last_login_at = datetime.now(UTC)
     audit(db, user.email, "auth.login", "user", user.id)
     db.commit()
@@ -86,7 +104,13 @@ def set_password(body: SetPasswordIn, db: Session = Depends(get_db)):
 @router.post("/forgot-password", status_code=204, dependencies=[Depends(login_limiter)])
 def forgot_password(body: ForgotPasswordIn, background: BackgroundTasks, db: Session = Depends(get_db)):
     """Email a 1-hour reset link. Always returns 204, so it can't be used to discover accounts."""
-    user = db.scalar(select(User).where(User.email == body.email.lower()))
+    email = body.email.lower()
+    # At most a few reset emails per account per hour, whatever IP they come from. Still answers 204.
+    if reset_requests.blocked(email, get_settings().reset_emails_per_account_per_hour, 3600):
+        burn_password_check(body.email)
+        return
+    reset_requests.hit(email, 3600)
+    user = db.scalar(select(User).where(User.email == email))
     if user and user.is_active:
         token = issue_action_token(db, user, "reset_password", timedelta(hours=RESET_LINK_HOURS))
         audit(db, user.email, "auth.reset_requested", "user", user.id)

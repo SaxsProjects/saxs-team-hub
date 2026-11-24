@@ -1,5 +1,6 @@
 """Request dependencies: current user, role checks, client IP and rate limiting."""
 
+import ipaddress
 import time
 from collections import defaultdict, deque
 
@@ -54,12 +55,31 @@ def require_member(user: User = Depends(current_user)) -> User:
     return user
 
 
+def _valid_ip(value: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request: Request) -> str | None:
-    if get_settings().trust_proxy:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()[:64]
-    return request.client.host if request.client else None
+    """The caller's IP address.
+
+    Behind proxies, X-Forwarded-For reads "client-supplied, ..., address seen by our proxy". The left-most
+    entries are whatever the caller sent and can be faked, so use the entry added by our own proxy:
+    `trusted_proxy_hops` from the right. Fall back to the connecting address if it is missing or invalid.
+    """
+    settings = get_settings()
+    peer = request.client.host if request.client else None
+    hops = settings.trusted_proxy_hops if settings.trust_proxy else 0
+    if hops:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if len(parts) >= hops:
+            ip = _valid_ip(parts[-hops])
+            if ip:
+                return ip
+    return peer[:64] if peer else None
 
 
 class RateLimiter:
@@ -86,5 +106,40 @@ class RateLimiter:
             self.hits.clear()
 
 
+class AccountThrottle:
+    """Sliding-window counter keyed by account email, independent of IP address.
+
+    In memory, like RateLimiter: correct for the single Render instance; move to the database or
+    Redis before running more than one instance.
+    """
+
+    def __init__(self, bucket: str):
+        self.bucket = bucket
+        self.hits: dict[str, deque] = defaultdict(deque)
+
+    def _queue(self, email: str, window_seconds: int) -> deque:
+        q = self.hits[email.strip().lower()]
+        now = time.monotonic()
+        while q and now - q[0] > window_seconds:
+            q.popleft()
+        return q
+
+    def blocked(self, email: str, limit: int, window_seconds: int) -> bool:
+        return len(self._queue(email, window_seconds)) >= limit
+
+    def hit(self, email: str, window_seconds: int) -> None:
+        self._queue(email, window_seconds).append(time.monotonic())
+        if len(self.hits) > 10_000:
+            self.hits.clear()
+
+    def reset(self, email: str) -> None:
+        self.hits.pop(email.strip().lower(), None)
+
+    def clear(self) -> None:
+        self.hits.clear()
+
+
 login_limiter = RateLimiter(10, 300, "login")
+login_failures = AccountThrottle("login-failures")
+reset_requests = AccountThrottle("reset-requests")
 public_offer_limiter = RateLimiter(60, 300, "public-offer")
