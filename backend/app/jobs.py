@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .emailer import notify_admin
-from .models import Offer, Payout, Person, ProjectContributor, User
+from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, User
 from .payouts import format_zar
 from .services import audit, today_local
 
@@ -63,9 +63,43 @@ def apply_retention(db: Session) -> int:
     return purged
 
 
+def expire_quotations(db: Session) -> int:
+    """Issued quotations past their validity date become expired."""
+    count = 0
+    for q in db.scalars(select(Quotation).where(Quotation.status == "issued", Quotation.valid_until < today_local())):
+        q.status = "expired"
+        audit(db, "daily-job", "quotation.expire", "quotation", q.id)
+        count += 1
+    db.commit()
+    return count
+
+
+def remind_overdue_invoices(db: Session) -> int:
+    overdue = [
+        inv
+        for inv in db.scalars(
+            select(Invoice)
+            .where(Invoice.status.in_(("issued", "part_paid")), Invoice.due_date < today_local())
+            .order_by(Invoice.due_date)
+        )
+        if inv.balance_cents > 0
+    ]
+    if overdue:
+        lines = [
+            f"- {inv.number}: {inv.client.name}, {format_zar(inv.balance_cents)} due {inv.due_date:%d %b %Y}" for inv in overdue
+        ]
+        notify_admin(
+            f"{len(overdue)} invoice(s) overdue",
+            "These invoices are past their due date:\n\n" + "\n".join(lines) + "\n\nFollow up with the client.",
+        )
+    return len(overdue)
+
+
 def run_daily(db: Session) -> dict:
     return {
         "offers_expired": expire_overdue_offers(db),
+        "quotations_expired": expire_quotations(db),
+        "invoices_overdue": remind_overdue_invoices(db),
         "payouts_due": remind_due_payouts(db),
         "people_purged": apply_retention(db),
     }

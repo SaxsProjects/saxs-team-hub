@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .jobs import run_daily
-from .routers import auth, me, offers, pages, people, projects
+from .pdf import load_signature
+from .routers import auth, finance, me, offers, pages, people, projects
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -19,6 +20,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 def create_app() -> FastAPI:
     settings = get_settings()
     settings.check_production_ready()
+    if settings.signature_configured:
+        load_signature()  # fail at startup, not on the first signed document, if the image is unusable
 
     app = FastAPI(
         title=f"{settings.company_name} Team Hub API",
@@ -50,7 +53,7 @@ def create_app() -> FastAPI:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         return response
 
-    for module in (auth, people, offers, projects, me):
+    for module in (auth, people, offers, projects, finance, me):
         app.include_router(module.router)
     app.include_router(offers.public)
     app.include_router(pages.router)
@@ -62,7 +65,12 @@ def create_app() -> FastAPI:
             database = True
         except Exception:  # noqa: BLE001 - report, don't crash the probe
             database = False
-        return {"ok": True, "database": database, "email": settings.smtp_configured}
+        return {
+            "ok": True,
+            "database": database,
+            "email": settings.smtp_configured,
+            "signature": settings.signature_configured,
+        }
 
     @app.post("/api/jobs/daily", tags=["system"])
     def daily_jobs(x_jobs_token: str = Header(default=""), db: Session = Depends(get_db)):

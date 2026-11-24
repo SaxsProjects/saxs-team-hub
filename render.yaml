@@ -43,3 +43,34 @@ services:
         sync: false
       - key: SMTP_PASS
         sync: false
+      # Company details printed on quotations, invoices and receipts.
+      - key: COMPANY_LEGAL_NAME
+        value: SaxsProjects (Pty) Ltd
+      - key: COMPANY_REGISTRATION_NUMBER
+        value: 2026/941760/07
+      - key: COMPANY_ADDRESS
+        value: Thohoyandou|Limpopo|South Africa
+      - key: COMPANY_WEBSITE
+        value: www.saxsprojects.co.za
+      - key: COMPANY_EMAIL
+        sync: false
+      - key: COMPANY_PHONE
+        sync: false
+      # Banking details: set in the Render dashboard only, never in this file.
+      - key: COMPANY_BANK_NAME
+        sync: false
+      - key: COMPANY_BANK_ACCOUNT_NAME
+        sync: false
+      - key: COMPANY_BANK_ACCOUNT_NUMBER
+        sync: false
+      - key: COMPANY_BANK_BRANCH_CODE
+        sync: false
+      - key: COMPANY_BANK_ACCOUNT_TYPE
+        sync: false
+      # The director's signature: upload signature.png as a Render Secret File.
+      - key: SIGNATURE_IMAGE_PATH
+        value: /etc/secrets/signature.png
+      - key: SIGNATORY_NAME
+        sync: false
+      - key: SIGNATORY_TITLE
+        value: Director

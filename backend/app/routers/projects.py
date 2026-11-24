@@ -1,6 +1,6 @@
 """Projects, contributor work shares, client payments, costs and payouts (README §4.5)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import current_user, require_admin
 from ..models import PROJECT_STATUSES, ClientPayment, Payout, Project, ProjectContributor, ProjectCost, User
+from ..numbering import allocate_number
 from ..payouts import calculate_payout
 from ..pdf import payout_statement_pdf
 from ..schemas import (
@@ -193,24 +194,24 @@ def add_cost(project_id: int, body: CostIn, db: Session = Depends(get_db), admin
 
 def next_statement_number(db: Session) -> str:
     year = today_local().year
-    count = db.scalar(select(func.count(Payout.id)).where(Payout.statement_number.like(f"SP-PS-{year}-%"))) or 0
-    return f"SP-PS-{year}-{count + 1:03d}"
+
+    def existing() -> int:  # statements numbered before the sequence table existed
+        return db.scalar(select(func.count(Payout.id)).where(Payout.statement_number.like(f"SP-PS-{year}-%"))) or 0
+
+    return allocate_number(db, "PS", year, seed=existing)
 
 
-@router.post("/projects/{project_id}/payments", response_model=PaymentRecordedOut, status_code=201)
-def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    """Record money received from the client and create the payouts it triggers."""
-    project = get_project(db, project_id)
-    if not project.contributors:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add contributors (with agreed work shares) first")
-    lock_contributors(db, project, admin.email)
-
-    payment = ClientPayment(project_id=project.id, **body.model_dump())
+def record_client_payment(
+    db: Session, project: Project, *, amount_cents: int, received_at: date, reference: str, actor: str
+) -> tuple[ClientPayment, list[Payout]]:
+    """Record money received from the client (excluding VAT) and create the payouts it triggers. The caller commits."""
+    lock_contributors(db, project, actor)
+    payment = ClientPayment(project_id=project.id, amount_cents=amount_cents, received_at=received_at, reference=reference)
     db.add(payment)
     db.flush()
     audit(
         db,
-        admin.email,
+        actor,
         "project.record_payment",
         "client_payment",
         payment.id,
@@ -249,13 +250,23 @@ def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_d
         db.flush()
         audit(
             db,
-            admin.email,
+            actor,
             "payout.create",
             "payout",
             payout.id,
             after={"person_id": c.person_id, "amount_cents": payout.amount_cents, "due_at": str(payout.due_at)},
         )
         payouts.append(payout)
+    return payment, payouts
+
+
+@router.post("/projects/{project_id}/payments", response_model=PaymentRecordedOut, status_code=201)
+def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Record money received from the client and create the payouts it triggers."""
+    project = get_project(db, project_id)
+    if not project.contributors:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add contributors (with agreed work shares) first")
+    payment, payouts = record_client_payment(db, project, actor=admin.email, **body.model_dump())
     db.commit()
     return PaymentRecordedOut(payment=payment, payouts=payouts)
 
@@ -301,6 +312,7 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
         due_at=payout.due_at.isoformat(),
         paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
         eft_reference=payout.eft_reference,
+        issued_on=payout.created_at.date(),
     )
     return Response(
         pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{payout.statement_number}.pdf"'}

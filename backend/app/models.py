@@ -5,6 +5,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     ForeignKey,
     Integer,
@@ -21,8 +22,11 @@ from .db import Base, UTCDateTime, utcnow
 STAGES = ("draft", "sent", "viewed", "accepted", "declined", "expired", "agreement_signed", "onboarded")
 OFFER_STATUSES = ("draft", "sent", "viewed", "accepted", "declined", "expired", "revoked")
 PROJECT_STATUSES = ("planned", "in_progress", "completed", "cancelled")
-DOCUMENT_KINDS = ("offer_pdf", "acceptance", "agreement", "other")
+DOCUMENT_KINDS = ("offer_pdf", "acceptance", "agreement", "other", "quotation", "invoice", "receipt", "credit_note")
 ROLES = ("admin", "member")
+QUOTATION_STATUSES = ("draft", "issued", "accepted", "declined", "expired")
+INVOICE_STATUSES = ("draft", "issued", "part_paid", "paid", "void")
+PAYMENT_METHODS = ("eft", "cash", "card", "other")
 
 # Contractor agreement: 15% initial rate, 20% after a written review.
 INITIAL_RATE_BP = 1500
@@ -171,6 +175,7 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     client_name: Mapped[str] = mapped_column(String(200))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="planned")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -244,6 +249,175 @@ class Payout(Base):
     client_payment: Mapped[ClientPayment] = relationship()
 
     __table_args__ = (UniqueConstraint("client_payment_id", "person_id"),)
+
+
+# ---- Finance: clients, quotations, invoices, receipts, credit notes ------------------------------
+
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    registration_number: Mapped[str | None] = mapped_column(String(64))
+    contact_name: Mapped[str | None] = mapped_column(String(200))
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    address: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class DocumentSequence(Base):
+    """Last number used per document type and year. Locked while a number is assigned, so numbers never repeat or skip."""
+
+    __tablename__ = "document_sequences"
+
+    doc_type: Mapped[str] = mapped_column(String(8), primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    last_number: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str | None] = mapped_column(String(32), unique=True)  # assigned only when issued
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="RESTRICT"), index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    title: Mapped[str] = mapped_column(String(200))
+    notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, default=0)
+    subtotal_cents: Mapped[int] = mapped_column(Integer, default=0)
+    vat_cents: Mapped[int] = mapped_column(Integer, default=0)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0)
+    pdf_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str | None] = mapped_column(String(64))
+    issued_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    responded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    client: Mapped[Client] = relationship()
+    project: Mapped["Project | None"] = relationship()
+    lines: Mapped[list["LineItem"]] = relationship(
+        cascade="all, delete-orphan", order_by="LineItem.position", foreign_keys="LineItem.quotation_id"
+    )
+
+    __table_args__ = (
+        CheckConstraint("total_cents >= 0 AND subtotal_cents >= 0 AND vat_cents >= 0", name="ck_quotation_amounts"),
+    )
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str | None] = mapped_column(String(32), unique=True)  # assigned only when issued
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="RESTRICT"), index=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id", ondelete="RESTRICT"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, default=0)
+    subtotal_cents: Mapped[int] = mapped_column(Integer, default=0)
+    vat_cents: Mapped[int] = mapped_column(Integer, default=0)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0)
+    paid_cents: Mapped[int] = mapped_column(Integer, default=0)
+    credited_cents: Mapped[int] = mapped_column(Integer, default=0)
+    pdf_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str | None] = mapped_column(String(64))
+    issued_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    client: Mapped[Client] = relationship()
+    project: Mapped["Project | None"] = relationship()
+    quotation: Mapped[Quotation | None] = relationship()
+    lines: Mapped[list["LineItem"]] = relationship(
+        cascade="all, delete-orphan", order_by="LineItem.position", foreign_keys="LineItem.invoice_id"
+    )
+    receipts: Mapped[list["Receipt"]] = relationship(back_populates="invoice", order_by="Receipt.id")
+    credit_notes: Mapped[list["CreditNote"]] = relationship(back_populates="invoice", order_by="CreditNote.id")
+
+    __table_args__ = (
+        CheckConstraint(
+            "total_cents >= 0 AND subtotal_cents >= 0 AND vat_cents >= 0 AND paid_cents >= 0 AND credited_cents >= 0"
+            " AND paid_cents + credited_cents <= total_cents",
+            name="ck_invoice_amounts",
+        ),
+    )
+
+    @property
+    def balance_cents(self) -> int:
+        return self.total_cents - self.paid_cents - self.credited_cents
+
+
+class LineItem(Base):
+    """A line on a quotation or an invoice (exactly one of the two)."""
+
+    __tablename__ = "line_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id", ondelete="CASCADE"), index=True)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(String(500))
+    quantity: Mapped[int] = mapped_column(Integer)
+    unit_price_cents: Mapped[int] = mapped_column(Integer)
+    line_total_cents: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (
+        CheckConstraint("(quotation_id IS NULL) <> (invoice_id IS NULL)", name="ck_line_item_parent"),
+        CheckConstraint("quantity > 0 AND unit_price_cents >= 0 AND line_total_cents >= 0", name="ck_line_item_amounts"),
+    )
+
+
+class Receipt(Base):
+    __tablename__ = "receipts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id", ondelete="RESTRICT"), index=True)
+    client_payment_id: Mapped[int | None] = mapped_column(ForeignKey("client_payments.id", ondelete="RESTRICT"))
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    received_on: Mapped[date] = mapped_column(Date)
+    method: Mapped[str] = mapped_column(String(16))
+    reference: Mapped[str] = mapped_column(String(120))
+    issue_date: Mapped[date] = mapped_column(Date)
+    pdf_document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    invoice: Mapped[Invoice] = relationship(back_populates="receipts")
+
+    __table_args__ = (CheckConstraint("amount_cents > 0", name="ck_receipt_amount"),)
+
+
+class CreditNote(Base):
+    """Corrects an issued invoice. Issued documents are never edited or deleted."""
+
+    __tablename__ = "credit_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id", ondelete="RESTRICT"), index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    issue_date: Mapped[date] = mapped_column(Date)
+    pdf_document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    invoice: Mapped[Invoice] = relationship(back_populates="credit_notes")
+
+    __table_args__ = (CheckConstraint("amount_cents > 0", name="ck_credit_note_amount"),)
 
 
 class AuditLog(Base):

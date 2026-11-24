@@ -41,6 +41,34 @@ class Settings(BaseSettings):
     company_name: str = "SaxsProjects"
     timezone: str = "Africa/Johannesburg"
 
+    # Company details printed on quotations, invoices, receipts, credit notes and statements.
+    company_legal_name: str = "SaxsProjects (Pty) Ltd"
+    company_registration_number: str = ""  # invoices cannot be issued until this is set
+    company_vat_number: str = ""  # once set, invoices become TAX INVOICES and VAT is added
+    company_address: str = ""  # lines separated by "|"
+    company_email: str = ""
+    company_phone: str = ""
+    company_website: str = ""
+    # Banking details printed on invoices. Environment variables only: never commit them.
+    company_bank_name: str = ""
+    company_bank_account_name: str = ""
+    company_bank_account_number: str = ""
+    company_bank_branch_code: str = ""
+    company_bank_account_type: str = ""
+
+    vat_rate_bp: int = 1500  # 15% South African VAT, used only when company_vat_number is set
+    quote_valid_days: int = 30
+    invoice_due_days: int = 7
+    deposit_percent: int = 50
+
+    # The director's signature, printed on documents the company signs (issued quotations,
+    # receipts, credit notes, payout statements and offer acceptance records). PNG or JPEG.
+    # Never commit it: on Render use a Secret File (e.g. /etc/secrets/signature.png).
+    signature_image_path: str = ""
+    signature_image_base64: str = ""
+    signatory_name: str = ""
+    signatory_title: str = "Director"
+
     payout_delay_days: int = 7
     declined_retention_days: int = 365
     max_upload_mb: int = 10
@@ -78,6 +106,24 @@ class Settings(BaseSettings):
     def smtp_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_user and self.smtp_pass)
 
+    @property
+    def vat_registered(self) -> bool:
+        return bool(self.company_vat_number.strip())
+
+    @property
+    def bank_configured(self) -> bool:
+        return bool(
+            self.company_bank_name.strip() and self.company_bank_account_number.strip() and self.company_bank_branch_code.strip()
+        )
+
+    @property
+    def signature_configured(self) -> bool:
+        return bool(self.signature_image_path.strip() or self.signature_image_base64.strip())
+
+    @property
+    def company_address_lines(self) -> list[str]:
+        return [line.strip() for line in self.company_address.split("|") if line.strip()]
+
     def check_production_ready(self) -> None:
         if not self.is_production:
             return
@@ -92,6 +138,11 @@ class Settings(BaseSettings):
             problems.append("SMTP_HOST, SMTP_USER and SMTP_PASS must be set so notifications are delivered")
         if not self.admin_notify_email:
             problems.append("ADMIN_NOTIFY_EMAIL must be set")
+        if not self.signature_configured or not self.signatory_name.strip():
+            problems.append(
+                "SIGNATURE_IMAGE_PATH (or SIGNATURE_IMAGE_BASE64) and SIGNATORY_NAME must be set "
+                "so signed documents carry the signature"
+            )
         if problems:
             raise RuntimeError("Production configuration incomplete: " + "; ".join(problems))
 
