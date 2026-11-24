@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import emailer  # noqa: E402
 from app.db import Base, SessionLocal, engine  # noqa: E402
-from app.deps import login_failures, reset_requests  # noqa: E402
+from app.deps import account_failures, login_failures, reset_requests  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
 from app.security import hash_password  # noqa: E402
@@ -33,6 +33,7 @@ def fresh_db():
     Base.metadata.create_all(engine)
     emailer.outbox.clear()
     login_failures.clear()
+    account_failures.clear()
     reset_requests.clear()
     yield
 

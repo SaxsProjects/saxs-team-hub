@@ -95,5 +95,9 @@ Production refuses to start without the signature, and the app checks the image 
 
 - `X-Forwarded-For` is read from the **right**: each proxy appends the address it received the request from, so only the last `TRUSTED_PROXY_HOPS` entries (Render: 1) were written by our infrastructure. Anything to the left was sent by the caller and is ignored. Missing or invalid values fall back to the connecting address. uvicorn runs with `--no-proxy-headers`, so it never trusts the header blindly.
 - If the IP recorded on offer acceptances ever shows a Render-internal address after deploying, raise `TRUSTED_PROXY_HOPS` to 2.
-- On top of the per-IP limits, each account locks for `LOGIN_LOCKOUT_MINUTES` (15) after `LOGIN_FAILURES_PER_ACCOUNT` (10) failed sign-ins, whatever IP they come from. It applies the same way to unknown emails, so it reveals nothing about which accounts exist. At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account.
-- These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one.
+- Sign-in has two failure limits on top of the per-IP request limit, and neither can be dodged by changing IP:
+  - **Account + IP** (`LOGIN_FAILURES_PER_ACCOUNT_IP`, 10): that IP is locked out of that account for `LOGIN_LOCKOUT_MINUTES` (15). An attacker only locks themselves out, never the owner.
+  - **Account, all IPs** (`LOGIN_FAILURES_PER_ACCOUNT`, 50): stops guessing spread over many IPs. While it is hit, only the correct password **and** two-factor code together can sign in, so the owner of a 2FA account (every admin in production) is never locked out. Accounts without 2FA wait for it to expire.
+  - Locked answers are identical for every email, existing or not, so they reveal nothing.
+- At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account; the response is always the same.
+- These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one. Memory is bounded at 10,000 keys per counter; when full, expired and low-count keys are dropped first and active lockouts are never dropped, so flooding cannot clear a lock.

@@ -80,7 +80,11 @@ class Settings(BaseSettings):
     trusted_proxy_hops: int = Field(1, ge=0, le=5)
 
     # Per-account limits, so faking IP addresses cannot get around them.
-    login_failures_per_account: int = 10  # failed logins per email before a lockout
+    # Failed sign-ins from one IP for one account before that IP is locked out of it.
+    login_failures_per_account_ip: int = 10
+    # Failed sign-ins for one account from all IPs together. Beyond this, only an account with
+    # two-factor can still sign in (correct password AND code), so attackers cannot lock the owner out.
+    login_failures_per_account: int = 50
     login_lockout_minutes: int = 15
     reset_emails_per_account_per_hour: int = 3
 

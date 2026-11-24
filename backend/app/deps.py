@@ -82,6 +82,28 @@ def client_ip(request: Request) -> str | None:
     return peer[:64] if peer else None
 
 
+MAX_TRACKED_KEYS = 10_000
+
+
+def _prune(hits: dict[str, deque], window_seconds: float, protect_at: int) -> None:
+    """Keep memory bounded without ever dropping an active lockout.
+
+    First drop keys with no hits inside the window. If still too many, drop the keys with the fewest
+    hits; keys at or above `protect_at` (currently blocked) are never dropped, so flooding the limiter
+    with new keys cannot clear a lockout.
+    """
+    if len(hits) <= MAX_TRACKED_KEYS:
+        return
+    now = time.monotonic()
+    for key in [k for k, q in hits.items() if not q or now - q[-1] > window_seconds]:
+        del hits[key]
+    if len(hits) <= MAX_TRACKED_KEYS:
+        return
+    removable = sorted((len(q), k) for k, q in hits.items() if len(q) < protect_at)
+    for _, key in removable[: len(hits) - MAX_TRACKED_KEYS]:
+        del hits[key]
+
+
 class RateLimiter:
     """Simple in-memory sliding-window limiter, per client IP and bucket."""
 
@@ -102,12 +124,11 @@ class RateLimiter:
         if len(q) >= self.max:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests, please try again shortly")
         q.append(now)
-        if len(self.hits) > 10_000:
-            self.hits.clear()
+        _prune(self.hits, self.window, self.max)
 
 
 class AccountThrottle:
-    """Sliding-window counter keyed by account email, independent of IP address.
+    """Sliding-window failure counter keyed by account (or account + IP), independent of the IP limiter.
 
     In memory, like RateLimiter: correct for the single Render instance; move to the database or
     Redis before running more than one instance.
@@ -117,29 +138,36 @@ class AccountThrottle:
         self.bucket = bucket
         self.hits: dict[str, deque] = defaultdict(deque)
 
-    def _queue(self, email: str, window_seconds: int) -> deque:
-        q = self.hits[email.strip().lower()]
+    @staticmethod
+    def _key(key: str) -> str:
+        return key.strip().lower()
+
+    def count(self, key: str, window_seconds: int) -> int:
+        q = self.hits.get(self._key(key))  # .get: checking a key must not create one
+        if not q:
+            return 0
         now = time.monotonic()
         while q and now - q[0] > window_seconds:
             q.popleft()
-        return q
+        return len(q)
 
-    def blocked(self, email: str, limit: int, window_seconds: int) -> bool:
-        return len(self._queue(email, window_seconds)) >= limit
+    def blocked(self, key: str, limit: int, window_seconds: int) -> bool:
+        return self.count(key, window_seconds) >= limit
 
-    def hit(self, email: str, window_seconds: int) -> None:
-        self._queue(email, window_seconds).append(time.monotonic())
-        if len(self.hits) > 10_000:
-            self.hits.clear()
+    def hit(self, key: str, window_seconds: int, protect_at: int) -> None:
+        self.count(key, window_seconds)
+        self.hits[self._key(key)].append(time.monotonic())
+        _prune(self.hits, window_seconds, protect_at)
 
-    def reset(self, email: str) -> None:
-        self.hits.pop(email.strip().lower(), None)
+    def reset(self, key: str) -> None:
+        self.hits.pop(self._key(key), None)
 
     def clear(self) -> None:
         self.hits.clear()
 
 
 login_limiter = RateLimiter(10, 300, "login")
-login_failures = AccountThrottle("login-failures")
+login_failures = AccountThrottle("login-failures")  # keyed by account + IP: the hard lock
+account_failures = AccountThrottle("account-failures")  # keyed by account: stops spread-out guessing
 reset_requests = AccountThrottle("reset-requests")
 public_offer_limiter = RateLimiter(60, 300, "public-offer")

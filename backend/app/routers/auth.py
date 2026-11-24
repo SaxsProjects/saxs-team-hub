@@ -1,12 +1,20 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..deps import current_user, login_failures, login_limiter, require_admin_any, reset_requests
+from ..deps import (
+    account_failures,
+    client_ip,
+    current_user,
+    login_failures,
+    login_limiter,
+    require_admin_any,
+    reset_requests,
+)
 from ..emailer import OutgoingEmail, send_email
 from ..models import ActionToken, User
 from ..schemas import (
@@ -36,37 +44,68 @@ from ..services import audit, issue_action_token, link, revoke_sessions
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+LOCKED_HINT = (
+    "Too many failed sign-ins for this account. Try again in {minutes} minutes. "
+    "If two-factor authentication is on, you can sign in now by entering your password and code together."
+)
+
+
 @router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    """Sign in.
+
+    Two failure limits, neither of which an attacker can get around by changing IP address:
+    - account + IP: after `login_failures_per_account_ip` failures that IP is locked out of the account.
+      An attacker only locks themselves out, not the owner.
+    - account (all IPs): after `login_failures_per_account` failures only a correct password AND
+      two-factor code can sign in. Guessing both is infeasible, so the owner of a 2FA account can still
+      get in. Accounts without 2FA wait for the lock to expire.
+    Locked responses are identical for every account, existing or not, so they reveal nothing.
+    """
     settings = get_settings()
     email = body.email.lower()
     window = settings.login_lockout_minutes * 60
-    # Per-account limit: applies to every email (existing or not), so it reveals nothing about accounts
-    # and cannot be avoided by changing IP address.
-    if login_failures.blocked(email, settings.login_failures_per_account, window):
-        audit(db, "anonymous", "auth.login_locked", "user", None)
-        db.commit()
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            f"Too many failed sign-ins for this account. Try again in {settings.login_lockout_minutes} minutes.",
-        )
+    pair = f"{email}|{client_ip(request) or 'unknown'}"
+    locked = HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED_HINT.format(minutes=settings.login_lockout_minutes))
 
-    def fail(detail: str) -> HTTPException:
-        login_failures.hit(email, window)
-        return HTTPException(status.HTTP_401_UNAUTHORIZED, detail)
+    def record_failure() -> None:
+        login_failures.hit(pair, window, protect_at=settings.login_failures_per_account_ip)
+        account_failures.hit(email, window, protect_at=settings.login_failures_per_account)
+
+    if login_failures.blocked(pair, settings.login_failures_per_account_ip, window):
+        audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account_ip"})
+        db.commit()
+        raise locked
+    account_locked = account_failures.blocked(email, settings.login_failures_per_account, window)
 
     user = db.scalar(select(User).where(User.email == email))
+    password_ok = bool(user and user.is_active and verify_password(user.password_hash, body.password))
     if not user:
         burn_password_check(body.password)
-        raise fail("Wrong email or password")
-    if not user.is_active or not verify_password(user.password_hash, body.password):
-        raise fail("Wrong email or password")
-    if user.totp_enabled:
-        if not body.totp_code:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
-        if not verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
-            raise fail("Wrong two-factor code")
-    login_failures.reset(email)
+    if account_locked:
+        # Only password + correct two-factor code gets through, and every failure looks the same.
+        code_ok = bool(
+            password_ok
+            and user.totp_enabled
+            and body.totp_code
+            and verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code)
+        )
+        if not code_ok:
+            record_failure()
+            audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account"})
+            db.commit()
+            raise locked
+    else:
+        if not password_ok:
+            record_failure()
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")
+        if user.totp_enabled:
+            if not body.totp_code:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
+            if not verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
+                record_failure()
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong two-factor code")
+    login_failures.reset(pair)
     user.last_login_at = datetime.now(UTC)
     audit(db, user.email, "auth.login", "user", user.id)
     db.commit()
@@ -109,7 +148,7 @@ def forgot_password(body: ForgotPasswordIn, background: BackgroundTasks, db: Ses
     if reset_requests.blocked(email, get_settings().reset_emails_per_account_per_hour, 3600):
         burn_password_check(body.email)
         return
-    reset_requests.hit(email, 3600)
+    reset_requests.hit(email, 3600, protect_at=get_settings().reset_emails_per_account_per_hour)
     user = db.scalar(select(User).where(User.email == email))
     if user and user.is_active:
         token = issue_action_token(db, user, "reset_password", timedelta(hours=RESET_LINK_HOURS))
