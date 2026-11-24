@@ -199,20 +199,45 @@ def test_ipv4_mapped_clients_do_not_share_a_lock(client, admin):
     assert login(client, ADMIN_PASSWORD, "::ffff:198.51.100.20").status_code == 200
 
 
-def test_parallel_two_factor_guesses_cannot_overshoot_the_ceiling(client, admin):
-    """A burst of simultaneous wrong codes is counted one at a time: at most 10 get through to be checked."""
+def test_parallel_reservations_never_overshoot_the_limit():
+    """The step every limit relies on: 64 threads released at once, exactly 10 get a slot.
+
+    Each successful reservation gets a distinct count 1..10, so exactly one request sees the limit
+    reached, which is what makes the owner alert go out exactly once. (Tested directly rather than
+    through the endpoint, because the in-memory SQLite test database cannot serve parallel requests;
+    production runs PostgreSQL with a connection pool.)
+    """
+    import threading
     from concurrent.futures import ThreadPoolExecutor
 
-    enable_2fa(client, admin)
-    emailer.outbox.clear()
+    from app.deps import AccountThrottle
 
-    def guess(i: int) -> int:
-        return login(client, ADMIN_PASSWORD, f"203.0.113.{i}", code="000000").status_code
+    throttle = AccountThrottle("test")
+    start = threading.Barrier(64)
 
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        codes = list(pool.map(guess, range(40)))
-    assert codes.count(401) == 10 and codes.count(429) == 30
-    assert len(wait_for_alerts()) == 1
+    def attempt(_: int) -> int:
+        start.wait()
+        return throttle.try_reserve("owner@example.com", 10, 900)
+
+    for _round in range(20):  # repeat to give a race every chance to show
+        throttle.clear()
+        with ThreadPoolExecutor(max_workers=64) as pool:
+            results = list(pool.map(attempt, range(64)))
+        granted = sorted(n for n in results if n)
+        assert granted == list(range(1, 11))
+        assert results.count(0) == 54
+
+
+def test_refund_gives_back_one_slot():
+    from app.deps import AccountThrottle
+
+    throttle = AccountThrottle("test")
+    for _ in range(10):
+        assert throttle.try_reserve("a@example.com", 10, 900)
+    assert throttle.try_reserve("a@example.com", 10, 900) == 0
+    throttle.refund("a@example.com")
+    assert throttle.try_reserve("a@example.com", 10, 900) == 10
+    throttle.refund("nobody@example.com")  # refunding an unknown key is harmless
 
 
 def wait_for_alerts(timeout: float = 5.0) -> list:
