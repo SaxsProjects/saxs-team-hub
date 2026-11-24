@@ -1,0 +1,212 @@
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..config import get_settings
+from ..db import get_db
+from ..deps import require_admin
+from ..models import STAGES, Document, OnboardingItem, Person, User
+from ..schemas import (
+    DocumentOut,
+    OnboardingItemOut,
+    OnboardingUpdate,
+    PersonCreate,
+    PersonOut,
+    PersonUpdate,
+    SensitiveIn,
+    StageIn,
+)
+from ..security import decrypt_json, encrypt_json
+from ..services import MANUAL_STAGE_MOVES, audit, complete_onboarding_item, set_stage, store_document
+
+router = APIRouter(prefix="/api", tags=["people"])
+
+
+def person_out(p: Person) -> PersonOut:
+    out = PersonOut.model_validate(p)
+    out.has_sensitive_details = bool(p.sensitive_enc)
+    return out
+
+
+def get_person(db: Session, person_id: int) -> Person:
+    person = db.get(Person, person_id)
+    if not person:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found")
+    return person
+
+
+@router.get("/people", response_model=list[PersonOut])
+def list_people(stage: str | None = None, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    q = select(Person).order_by(Person.created_at.desc())
+    if stage:
+        q = q.where(Person.status == stage)
+    return [person_out(p) for p in db.scalars(q)]
+
+
+@router.post("/people", response_model=PersonOut, status_code=201)
+def create_person(body: PersonCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    person = Person(full_name=body.full_name.strip(), email=body.email.lower(), phone=body.phone)
+    db.add(person)
+    db.flush()
+    audit(db, admin.email, "person.create", "person", person.id, after={"stage": person.status})
+    db.commit()
+    return person_out(person)
+
+
+@router.get("/people/{person_id}", response_model=PersonOut)
+def read_person(person_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    return person_out(get_person(db, person_id))
+
+
+@router.patch("/people/{person_id}", response_model=PersonOut)
+def update_person(person_id: int, body: PersonUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    person = get_person(db, person_id)
+    changes = body.model_dump(exclude_unset=True)
+    if "rate_bp" in changes and changes["rate_bp"] != person.rate_bp and not changes.get("rate_review_note"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Changing the rate needs rate_review_note (the written review it is based on)"
+        )
+    before = {"rate_bp": person.rate_bp}
+    for key, value in changes.items():
+        setattr(person, key, value.lower() if key == "email" and value else value)
+    audit(db, admin.email, "person.update", "person", person.id, before, {"fields": sorted(changes), "rate_bp": person.rate_bp})
+    db.commit()
+    return person_out(person)
+
+
+@router.delete("/people/{person_id}", status_code=204)
+def delete_person(person_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Erase a person's data (POPIA). Not allowed once they have payout records."""
+    person = get_person(db, person_id)
+    from ..models import Payout, ProjectContributor
+
+    if db.scalar(select(Payout.id).where(Payout.person_id == person.id).limit(1)) or db.scalar(
+        select(ProjectContributor.id).where(ProjectContributor.person_id == person.id).limit(1)
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "This person has project or payout records that must be kept for tax purposes"
+        )
+    for user in db.scalars(select(User).where(User.person_id == person.id)):
+        db.delete(user)
+    db.delete(person)
+    audit(db, admin.email, "person.erase", "person", person_id)
+    db.commit()
+
+
+@router.post("/people/{person_id}/stage", response_model=PersonOut)
+def move_stage(person_id: int, body: StageIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    person = get_person(db, person_id)
+    if body.stage not in STAGES or MANUAL_STAGE_MOVES.get(person.status) != body.stage:
+        allowed = MANUAL_STAGE_MOVES.get(person.status)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Can't move from '{person.status}' to '{body.stage}'" + (f"; next step is '{allowed}'" if allowed else ""),
+        )
+    set_stage(db, person, body.stage, admin.email)
+    if body.stage == "agreement_signed":
+        complete_onboarding_item(db, person, "agreement_signed")
+    db.commit()
+    return person_out(person)
+
+
+# ---- Sensitive details (encrypted) -------------------------------------------------
+
+
+def mask(details: dict) -> dict:
+    out = dict(details)
+    acct = out.get("account_number", "").replace(" ", "")
+    out["account_number"] = f"****{acct[-4:]}" if acct else ""
+    if out.get("id_number"):
+        out["id_number"] = f"****{out['id_number'][-3:]}"
+    return out
+
+
+def save_sensitive(db: Session, person: Person, body: SensitiveIn, actor: str) -> None:
+    person.sensitive_enc = encrypt_json(body.model_dump())
+    complete_onboarding_item(db, person, "banking_captured")
+    audit(db, actor, "person.sensitive_update", "person", person.id, after={"fields": sorted(body.model_dump())})
+
+
+@router.put("/people/{person_id}/sensitive", status_code=204)
+def put_sensitive(person_id: int, body: SensitiveIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    save_sensitive(db, get_person(db, person_id), body, admin.email)
+    db.commit()
+
+
+@router.get("/people/{person_id}/sensitive")
+def get_sensitive(person_id: int, reveal: bool = False, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    person = get_person(db, person_id)
+    details = decrypt_json(person.sensitive_enc)
+    if details is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No details captured")
+    if reveal:
+        audit(db, admin.email, "person.sensitive_reveal", "person", person.id)
+        db.commit()
+        return details
+    return mask(details)
+
+
+# ---- Onboarding (admin) -------------------------------------------------------------
+
+
+@router.get("/people/{person_id}/onboarding", response_model=list[OnboardingItemOut])
+def person_onboarding(person_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    return get_person(db, person_id).onboarding_items
+
+
+@router.patch("/onboarding/{item_id}", response_model=OnboardingItemOut)
+def update_onboarding(item_id: int, body: OnboardingUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    item = db.get(OnboardingItem, item_id)
+    if not item:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Checklist item not found")
+    item.done = body.done
+    item.done_at = datetime.now(UTC) if body.done else None
+    audit(db, admin.email, "onboarding.update", "onboarding_item", item.id, after={"key": item.key, "done": body.done})
+    db.commit()
+    return item
+
+
+# ---- Documents (admin upload, e.g. signed contractor agreement) -----------------------
+
+ALLOWED_UPLOAD_KINDS = {"agreement", "other"}
+
+
+async def read_pdf_upload(file: UploadFile) -> bytes:
+    limit = get_settings().max_upload_mb * 1024 * 1024
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"File is larger than {limit // 1048576} MB")
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Only PDF files are accepted")
+    return data
+
+
+@router.post("/people/{person_id}/documents", response_model=DocumentOut, status_code=201)
+async def upload_document(
+    person_id: int,
+    kind: str = "agreement",
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    if kind not in ALLOWED_UPLOAD_KINDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"kind must be one of {sorted(ALLOWED_UPLOAD_KINDS)}")
+    person = get_person(db, person_id)
+    data = await read_pdf_upload(file)
+    doc = store_document(
+        db, person_id=person.id, kind=kind, filename=file.filename or f"{kind}.pdf", content_type="application/pdf", content=data
+    )
+    audit(db, admin.email, "document.upload", "document", doc.id, after={"kind": kind, "sha256": doc.sha256})
+    if kind == "agreement":
+        complete_onboarding_item(db, person, "agreement_signed")
+    db.commit()
+    return doc
+
+
+@router.get("/people/{person_id}/documents", response_model=list[DocumentOut])
+def list_documents(person_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    return db.scalars(
+        select(Document).where(Document.person_id == get_person(db, person_id).id).order_by(Document.created_at)
+    ).all()

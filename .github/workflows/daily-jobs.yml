@@ -1,0 +1,23 @@
+# Runs the Team Hub's daily housekeeping (expire offers, payout reminders, POPIA retention).
+# Set repository secrets TEAM_HUB_API_URL (e.g. https://saxs-team-hub-api.onrender.com) and
+# TEAM_HUB_JOBS_TOKEN (the JOBS_TOKEN value). Until they are set the job is skipped.
+name: Daily jobs
+
+on:
+  schedule:
+    - cron: "17 5 * * *"   # 07:17 SAST
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the jobs endpoint
+        env:
+          API_URL: ${{ secrets.TEAM_HUB_API_URL }}
+          JOBS_TOKEN: ${{ secrets.TEAM_HUB_JOBS_TOKEN }}
+        run: |
+          if [ -z "$API_URL" ] || [ -z "$JOBS_TOKEN" ]; then echo "Secrets not set; skipping."; exit 0; fi
+          curl --fail --silent --show-error --max-time 120 -X POST -H "X-Jobs-Token: $JOBS_TOKEN" "$API_URL/api/jobs/daily"
