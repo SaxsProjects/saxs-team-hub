@@ -166,7 +166,13 @@ def test_daily_job_expires_overdue_offer(client, sent_offer):
 def test_jobs_endpoint_requires_token(client):
     assert client.post("/api/jobs/daily").status_code == 401
     r = client.post("/api/jobs/daily", headers={"X-Jobs-Token": "jobs-token-for-tests"})
-    assert r.status_code == 200 and set(r.json()) == {"offers_expired", "payouts_due", "people_purged"}
+    assert r.status_code == 200 and set(r.json()) == {
+        "offers_expired",
+        "quotations_expired",
+        "invoices_overdue",
+        "payouts_due",
+        "people_purged",
+    }
 
 
 def test_offer_in_past_rejected(client, admin):

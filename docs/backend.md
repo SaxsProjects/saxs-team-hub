@@ -14,6 +14,11 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 | Onboarding | `GET /api/people/{id}/onboarding` · `PATCH /api/onboarding/{item}` | admin |
 | Projects & payouts | `GET/POST /api/projects` · `GET/PATCH /api/projects/{id}` · `PUT /api/projects/{id}/contributors` · `DELETE …/contributors/{person}` · `POST …/lock` · `POST …/costs` · `POST …/payments` · `GET /api/payouts` · `POST /api/payouts/{id}/paid` | admin |
 | Statements | `GET /api/payouts/{id}/statement.pdf` | admin, or the contributor it belongs to |
+| Clients | `GET/POST /api/clients` · `GET/PATCH /api/clients/{id}` | admin |
+| Quotations | `GET/POST /api/quotations` · `GET/PATCH/DELETE /api/quotations/{id}` (drafts only) · `POST …/issue` · `POST …/accept` (creates the project) · `POST …/decline` · `GET …/pdf` | admin |
+| Invoices | `GET/POST /api/invoices` (from an accepted quotation, optionally `portion_percent` for a deposit) · `GET/PATCH/DELETE /api/invoices/{id}` (drafts only) · `POST …/issue` · `POST …/payments` (issues a receipt, triggers payouts) · `POST …/credit-notes` · `GET …/receipts` · `GET …/credit-notes` · `GET …/pdf` | admin |
+| Receipts & credit notes | `GET /api/receipts/{id}/pdf` · `GET /api/credit-notes/{id}/pdf` | admin |
+| Finance overview | `GET /api/finance/readiness` (what is still missing, never the values) · `GET /api/finance/summary` | admin |
 | Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
 | System | `GET /api/health` · `GET /api/audit` (admin) · `POST /api/jobs/daily` (`X-Jobs-Token`) | |
 
@@ -49,4 +54,39 @@ Sessions are 60-minute tokens. Changing or resetting a password, or turning a me
 
 ## Daily jobs
 
-`python -m app.cli daily-jobs` or `POST /api/jobs/daily` with `X-Jobs-Token`. It expires overdue offers (and emails the founder, which is the "day after the deadline" reminder), emails a list of payouts that are due, and applies POPIA retention. `.github/workflows/daily-jobs.yml` calls it every morning once the `TEAM_HUB_API_URL` and `TEAM_HUB_JOBS_TOKEN` repository secrets are set.
+`python -m app.cli daily-jobs` or `POST /api/jobs/daily` with `X-Jobs-Token`. It expires overdue offers (and emails the founder, which is the "day after the deadline" reminder), emails a list of payouts that are due, expires quotations past their validity date, emails a list of overdue invoices, and applies POPIA retention. `.github/workflows/daily-jobs.yml` calls it every morning once the `TEAM_HUB_API_URL` and `TEAM_HUB_JOBS_TOKEN` repository secrets are set.
+
+## Finance: quotations, invoices, receipts and credit notes
+
+- **Numbers** (`SP-Q-`, `SP-INV-`, `SP-R-`, `SP-CN-`, `SP-PS-YYYY-NNN`) come from `document_sequences`. The row is locked while a number is taken, inside the same transaction as the document, so numbers never repeat and a failed request never leaves a gap. The counter restarts each year. `tests/test_numbering_postgres.py` issues 50 invoices in parallel against PostgreSQL to prove it.
+- **Drafts** can be edited or deleted. They have no number, their PDF is a preview with a DRAFT watermark, and they are never signed.
+- **Issuing** assigns the number, renders the PDF once, and stores it in `documents` with its SHA-256. Later downloads return exactly those bytes. Issued documents cannot be changed (HTTP 409): an invoice is corrected with a credit note.
+- **Money** is integer cents. VAT is added only once `COMPANY_VAT_NUMBER` is set (then invoices say TAX INVOICE). Payouts are calculated on money received excluding VAT.
+- **Payments** on an invoice issue a receipt automatically and, when the invoice belongs to a project, record the client payment that creates contributor payouts (the same rule as `POST /projects/{id}/payments`).
+- **Deposits:** `POST /api/invoices {"quotation_id": 1, "portion_percent": 50}` bills 50%; a later `{"quotation_id": 1}` bills whatever is left. A quotation can never be invoiced for more than its total.
+
+### Signed documents
+
+The director's signature is printed on **issued quotations, receipts, credit notes, payout statements and offer acceptance records**. Invoices carry the banking details instead, and drafts are never signed.
+
+The signature image is never stored in the repository. Set it as configuration:
+
+| Variable | Purpose |
+|---|---|
+| `SIGNATURE_IMAGE_PATH` | Path to a PNG or JPEG (max 1 MB). On Render, add a **Secret File** named `signature.png` and set this to `/etc/secrets/signature.png` |
+| `SIGNATURE_IMAGE_BASE64` | Alternative: the image as base64 |
+| `SIGNATORY_NAME`, `SIGNATORY_TITLE` | Printed under the signature (title defaults to Director) |
+
+Production refuses to start without the signature, and the app checks the image at startup. Quotations, receipts and credit notes cannot be issued until it is set.
+
+### Company details
+
+| Variable | Notes |
+|---|---|
+| `COMPANY_LEGAL_NAME`, `COMPANY_REGISTRATION_NUMBER`, `COMPANY_VAT_NUMBER` | Invoices cannot be issued until the registration number is set |
+| `COMPANY_ADDRESS` | Lines separated by `|` |
+| `COMPANY_EMAIL`, `COMPANY_PHONE`, `COMPANY_WEBSITE` | |
+| `COMPANY_BANK_NAME`, `COMPANY_BANK_ACCOUNT_NAME`, `COMPANY_BANK_ACCOUNT_NUMBER`, `COMPANY_BANK_BRANCH_CODE`, `COMPANY_BANK_ACCOUNT_TYPE` | Environment variables only, never committed. Invoices cannot be issued until name, account number and branch code are set |
+| `QUOTE_VALID_DAYS` (30), `INVOICE_DUE_DAYS` (7), `DEPOSIT_PERCENT` (50), `VAT_RATE_BP` (1500) | Defaults in brackets |
+
+`GET /api/finance/readiness` lists anything still missing without ever returning the values.
