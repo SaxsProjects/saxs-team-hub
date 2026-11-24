@@ -12,8 +12,10 @@ from ..deps import (
     current_user,
     login_failures,
     login_limiter,
+    rate_key_ip,
     require_admin_any,
     reset_requests,
+    totp_failures,
 )
 from ..emailer import OutgoingEmail, send_email
 from ..models import ActionToken, User
@@ -60,19 +62,42 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     - account (all IPs): after `login_failures_per_account` failures only a correct password AND
       two-factor code can sign in. Guessing both is infeasible, so the owner of a 2FA account can still
       get in. Accounts without 2FA wait for the lock to expire.
+    - wrong two-factor codes (all IPs): after `totp_failures_per_account` every sign-in is refused until
+      the lock expires, and the owner is emailed, because whoever is guessing already has the password.
     Locked responses are identical for every account, existing or not, so they reveal nothing.
     """
     settings = get_settings()
     email = body.email.lower()
     window = settings.login_lockout_minutes * 60
-    pair = f"{email}|{client_ip(request) or 'unknown'}"
+    pair = f"{email}|{rate_key_ip(client_ip(request))}"
     locked = HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED_HINT.format(minutes=settings.login_lockout_minutes))
 
     def record_failure() -> None:
         login_failures.hit(pair, window, protect_at=settings.login_failures_per_account_ip)
         account_failures.hit(email, window, protect_at=settings.login_failures_per_account)
 
-    if login_failures.blocked(pair, settings.login_failures_per_account_ip, window):
+    def record_totp_failure(user: User) -> None:
+        record_failure()
+        totp_failures.hit(email, window, protect_at=settings.totp_failures_per_account)
+        if totp_failures.count(email, window) == settings.totp_failures_per_account:
+            audit(db, "anonymous", "auth.totp_lock", "user", user.id)
+            # Sent now: background tasks do not run when the request ends in an error, as this one does.
+            send_email(
+                OutgoingEmail(
+                    to=user.email,
+                    subject=f"Security alert for your {settings.company_name} Team Hub account",
+                    text=(
+                        "Someone entered your correct password but wrong two-factor codes many times, so "
+                        f"sign-in to your account is blocked for {settings.login_lockout_minutes} minutes.\n\n"
+                        "If this wasn't you, your password is known to someone else. Change it as soon as "
+                        f"the block ends: {link('/forgot-password')}"
+                    ),
+                ),
+            )
+
+    if totp_failures.blocked(email, settings.totp_failures_per_account, window) or login_failures.blocked(
+        pair, settings.login_failures_per_account_ip, window
+    ):
         audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account_ip"})
         db.commit()
         raise locked
@@ -91,7 +116,10 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
             and verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code)
         )
         if not code_ok:
-            record_failure()
+            if password_ok and user.totp_enabled and body.totp_code:
+                record_totp_failure(user)
+            else:
+                record_failure()
             audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account"})
             db.commit()
             raise locked
@@ -103,7 +131,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
             if not body.totp_code:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
             if not verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
-                record_failure()
+                record_totp_failure(user)
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong two-factor code")
     login_failures.reset(pair)
     user.last_login_at = datetime.now(UTC)

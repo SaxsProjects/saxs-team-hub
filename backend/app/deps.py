@@ -62,6 +62,19 @@ def _valid_ip(value: str) -> str | None:
         return None
 
 
+def rate_key_ip(ip: str | None) -> str:
+    """IP used as a rate-limit key. IPv6 is grouped by /64, since one connection usually has a whole /64."""
+    if not ip:
+        return "unknown"
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip[:64]
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{addr}/64", strict=False))
+    return str(addr)
+
+
 def client_ip(request: Request) -> str | None:
     """The caller's IP address.
 
@@ -116,7 +129,7 @@ class RateLimiter:
     def __call__(self, request: Request) -> None:
         if get_settings().environment == "test":
             return
-        key = f"{self.bucket}:{client_ip(request)}"
+        key = f"{self.bucket}:{rate_key_ip(client_ip(request))}"
         now = time.monotonic()
         q = self.hits[key]
         while q and now - q[0] > self.window:
@@ -169,5 +182,6 @@ class AccountThrottle:
 login_limiter = RateLimiter(10, 300, "login")
 login_failures = AccountThrottle("login-failures")  # keyed by account + IP: the hard lock
 account_failures = AccountThrottle("account-failures")  # keyed by account: stops spread-out guessing
+totp_failures = AccountThrottle("totp-failures")  # keyed by account: hard ceiling on 2FA code guesses
 reset_requests = AccountThrottle("reset-requests")
 public_offer_limiter = RateLimiter(60, 300, "public-offer")

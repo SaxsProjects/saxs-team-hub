@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # two-factor can still sign in (correct password AND code), so attackers cannot lock the owner out.
     login_failures_per_account: int = 50
     login_lockout_minutes: int = 15
+    # Wrong two-factor codes for one account from all IPs together. Past this every sign-in is refused
+    # until the lock expires: someone has the password, and the owner is emailed to change it.
+    totp_failures_per_account: int = 10
     reset_emails_per_account_per_hour: int = 3
 
     @field_validator("database_url")

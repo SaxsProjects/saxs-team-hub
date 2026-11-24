@@ -6,7 +6,7 @@ from starlette.requests import Request
 
 from app import emailer
 from app.config import get_settings
-from app.deps import client_ip, login_limiter
+from app.deps import client_ip, login_limiter, rate_key_ip
 
 from .conftest import ADMIN_EMAIL, ADMIN_PASSWORD
 
@@ -141,3 +141,45 @@ def test_reset_emails_are_limited_per_account(client, admin):
         assert r.status_code == 204  # same answer every time, so nothing is revealed
     sent = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "reset-password?token=" in m.text]
     assert len(sent) == 3
+
+
+def enable_2fa(client, admin) -> str:
+    secret = client.post("/api/auth/2fa/setup", headers=admin).json()["secret"]
+    assert client.post("/api/auth/2fa/enable", headers=admin, json={"code": pyotp.TOTP(secret).now()}).status_code == 204
+    return secret
+
+
+def test_two_factor_guessing_has_a_hard_account_wide_ceiling(client, admin):
+    """Someone with the stolen password, spreading code guesses over many IPs, is stopped after 10."""
+    secret = enable_2fa(client, admin)
+    emailer.outbox.clear()
+    for i in range(10):
+        assert login(client, ADMIN_PASSWORD, f"203.0.113.{i}", code="000000").status_code == 401
+    # Now everything is refused for this account, even the right code, from any IP...
+    assert login(client, ADMIN_PASSWORD, "198.51.100.20", code=pyotp.TOTP(secret).now()).status_code == 429
+    # ...and the owner has been warned that their password is known.
+    alerts = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
+    assert len(alerts) == 1
+
+
+def test_two_factor_ceiling_also_applies_during_an_account_lock(client, admin):
+    secret = enable_2fa(client, admin)
+    for i in range(50):
+        login(client, f"guess-{i}", f"203.0.113.{i}")
+    for i in range(10):
+        assert login(client, ADMIN_PASSWORD, f"192.0.2.{i}", code="000000").status_code == 429
+    assert login(client, ADMIN_PASSWORD, "198.51.100.20", code=pyotp.TOTP(secret).now()).status_code == 429
+
+
+def test_ipv6_addresses_are_grouped_by_64():
+    assert rate_key_ip("2001:db8:1:2::1") == rate_key_ip("2001:db8:1:2:ffff::9") == "2001:db8:1:2::/64"
+    assert rate_key_ip("2001:db8:1:3::1") != rate_key_ip("2001:db8:1:2::1")
+    assert rate_key_ip("203.0.113.9") == "203.0.113.9"
+    assert rate_key_ip(None) == "unknown"
+
+
+def test_rotating_ipv6_addresses_in_one_64_share_a_lock(client, admin):
+    for i in range(10):
+        assert login(client, f"guess-{i}", f"2001:db8:1:2::{i + 1:x}").status_code == 401
+    assert login(client, ADMIN_PASSWORD, "2001:db8:1:2::abcd").status_code == 429
+    assert login(client, ADMIN_PASSWORD, "2001:db8:9:9::1").status_code == 200

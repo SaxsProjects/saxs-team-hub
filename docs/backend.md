@@ -98,6 +98,8 @@ Production refuses to start without the signature, and the app checks the image 
 - Sign-in has two failure limits on top of the per-IP request limit, and neither can be dodged by changing IP:
   - **Account + IP** (`LOGIN_FAILURES_PER_ACCOUNT_IP`, 10): that IP is locked out of that account for `LOGIN_LOCKOUT_MINUTES` (15). An attacker only locks themselves out, never the owner.
   - **Account, all IPs** (`LOGIN_FAILURES_PER_ACCOUNT`, 50): stops guessing spread over many IPs. While it is hit, only the correct password **and** two-factor code together can sign in, so the owner of a 2FA account (every admin in production) is never locked out. Accounts without 2FA wait for it to expire.
+  - **Wrong two-factor codes, all IPs** (`TOTP_FAILURES_PER_ACCOUNT`, 10): whoever is guessing already has the password, so every sign-in to the account is refused until the lock expires (even a correct code), and the owner is emailed to change their password.
   - Locked answers are identical for every email, existing or not, so they reveal nothing.
+- IPv6 addresses are grouped by /64 for all of these limits, because one connection usually has a whole /64 to rotate through.
 - At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account; the response is always the same.
 - These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one. Memory is bounded at 10,000 keys per counter; when full, expired and low-count keys are dropped first and active lockouts are never dropped, so flooding cannot clear a lock.
