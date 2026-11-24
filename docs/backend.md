@@ -90,3 +90,17 @@ Production refuses to start without the signature, and the app checks the image 
 | `QUOTE_VALID_DAYS` (30), `INVOICE_DUE_DAYS` (7), `DEPOSIT_PERCENT` (50), `VAT_RATE_BP` (1500) | Defaults in brackets |
 
 `GET /api/finance/readiness` lists anything still missing without ever returning the values.
+
+## Client IP addresses and sign-in limits
+
+- `X-Forwarded-For` is read from the **right**: each proxy appends the address it received the request from, so only the last `TRUSTED_PROXY_HOPS` entries (Render: 1) were written by our infrastructure. Anything to the left was sent by the caller and is ignored. Missing or invalid values fall back to the connecting address. uvicorn runs with `--no-proxy-headers`, so it never trusts the header blindly.
+- If the IP recorded on offer acceptances ever shows a Render-internal address after deploying, raise `TRUSTED_PROXY_HOPS` to 2.
+- Sign-in has two failure limits on top of the per-IP request limit, and neither can be dodged by changing IP:
+  - **Account + IP** (`LOGIN_FAILURES_PER_ACCOUNT_IP`, 10): that IP is locked out of that account for `LOGIN_LOCKOUT_MINUTES` (15). An attacker only locks themselves out, never the owner.
+  - **Account, all IPs** (`LOGIN_FAILURES_PER_ACCOUNT`, 50): stops guessing spread over many IPs. While it is hit, only the correct password **and** two-factor code together can sign in, so the owner of a 2FA account (every admin in production) is never locked out. Accounts without 2FA wait for it to expire.
+  - **Wrong two-factor codes, all IPs** (`TOTP_FAILURES_PER_ACCOUNT`, 10): whoever is guessing already has the password, so every sign-in to the account is refused until the lock expires (even a correct code), and the owner is emailed to change their password.
+  - Locked answers are identical for every email, existing or not, so they reveal nothing.
+- IPv6 addresses are grouped by /64 for all of these limits, because one connection usually has a whole /64 to rotate through. IPv4 addresses written in IPv6 form (IPv4-mapped, NAT64, 6to4, Teredo) are limited by their real IPv4 address, so they never share one key.
+- Each sign-in attempt reserves its slot in the counters atomically **before** the slow checks (password hashing, database) and gives it back if that step succeeds. A burst of parallel requests cannot slip past a limit, and no lock is ever held while anything slow runs, so hammering one account cannot stall the server. The two-factor alert email is sent on its own thread.
+- At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account; the response is always the same.
+- These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one. Memory is bounded at 10,000 keys per counter; when full, expired and low-count keys are dropped first and active lockouts are never dropped, so flooding cannot clear a lock.

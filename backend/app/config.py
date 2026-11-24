@@ -73,8 +73,23 @@ class Settings(BaseSettings):
     declined_retention_days: int = 365
     max_upload_mb: int = 10
 
-    # Behind Render/most proxies the client IP is in X-Forwarded-For.
+    # Behind Render/most proxies the client IP is in X-Forwarded-For. Each proxy appends the address it
+    # received the request from, so only the right-most `trusted_proxy_hops` entries can be trusted;
+    # anything to the left of them was written by the client and can be faked.
     trust_proxy: bool = True
+    trusted_proxy_hops: int = Field(1, ge=0, le=5)
+
+    # Per-account limits, so faking IP addresses cannot get around them.
+    # Failed sign-ins from one IP for one account before that IP is locked out of it.
+    login_failures_per_account_ip: int = 10
+    # Failed sign-ins for one account from all IPs together. Beyond this, only an account with
+    # two-factor can still sign in (correct password AND code), so attackers cannot lock the owner out.
+    login_failures_per_account: int = 50
+    login_lockout_minutes: int = 15
+    # Wrong two-factor codes for one account from all IPs together. Past this every sign-in is refused
+    # until the lock expires: someone has the password, and the owner is emailed to change it.
+    totp_failures_per_account: int = 10
+    reset_emails_per_account_per_hour: int = 3
 
     @field_validator("database_url")
     @classmethod
