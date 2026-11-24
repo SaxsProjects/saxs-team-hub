@@ -1,6 +1,8 @@
 """Request dependencies: current user, role checks, client IP and rate limiting."""
 
+import hashlib
 import ipaddress
+import threading
 import time
 from collections import defaultdict, deque
 
@@ -71,8 +73,30 @@ def rate_key_ip(ip: str | None) -> str:
     except ValueError:
         return ip[:64]
     if addr.version == 6:
+        embedded = _embedded_ipv4(addr)
+        if embedded is not None:
+            return str(embedded)  # an IPv4 client written in IPv6 form: limit it by its real IPv4 address
         return str(ipaddress.ip_network(f"{addr}/64", strict=False))
     return str(addr)
+
+
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
+def _embedded_ipv4(addr: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address inside an IPv4-mapped, NAT64, 6to4 or Teredo IPv6 address, if any.
+
+    Without this, every such client would share one /64 key, and one of them could lock out all the others.
+    """
+    if addr.ipv4_mapped:
+        return addr.ipv4_mapped
+    if addr in _NAT64:
+        return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
+    if addr.sixtofour:
+        return addr.sixtofour
+    if addr.teredo:
+        return addr.teredo[1]
+    return None
 
 
 def client_ip(request: Request) -> str | None:
@@ -125,19 +149,21 @@ class RateLimiter:
         self.window = window_seconds
         self.bucket = bucket
         self.hits: dict[str, deque] = defaultdict(deque)
+        self._lock = threading.Lock()  # requests run in a thread pool: check-and-count must be atomic
 
     def __call__(self, request: Request) -> None:
         if get_settings().environment == "test":
             return
         key = f"{self.bucket}:{rate_key_ip(client_ip(request))}"
-        now = time.monotonic()
-        q = self.hits[key]
-        while q and now - q[0] > self.window:
-            q.popleft()
-        if len(q) >= self.max:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests, please try again shortly")
-        q.append(now)
-        _prune(self.hits, self.window, self.max)
+        with self._lock:
+            now = time.monotonic()
+            q = self.hits[key]
+            while q and now - q[0] > self.window:
+                q.popleft()
+            if len(q) >= self.max:
+                raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests, please try again shortly")
+            q.append(now)
+            _prune(self.hits, self.window, self.max)
 
 
 class AccountThrottle:
@@ -150,33 +176,53 @@ class AccountThrottle:
     def __init__(self, bucket: str):
         self.bucket = bucket
         self.hits: dict[str, deque] = defaultdict(deque)
+        self._lock = threading.RLock()
 
     @staticmethod
     def _key(key: str) -> str:
         return key.strip().lower()
 
     def count(self, key: str, window_seconds: int) -> int:
-        q = self.hits.get(self._key(key))  # .get: checking a key must not create one
-        if not q:
-            return 0
-        now = time.monotonic()
-        while q and now - q[0] > window_seconds:
-            q.popleft()
-        return len(q)
+        with self._lock:
+            q = self.hits.get(self._key(key))  # .get: checking a key must not create one
+            if not q:
+                return 0
+            now = time.monotonic()
+            while q and now - q[0] > window_seconds:
+                q.popleft()
+            return len(q)
 
     def blocked(self, key: str, limit: int, window_seconds: int) -> bool:
         return self.count(key, window_seconds) >= limit
 
-    def hit(self, key: str, window_seconds: int, protect_at: int) -> None:
-        self.count(key, window_seconds)
-        self.hits[self._key(key)].append(time.monotonic())
-        _prune(self.hits, window_seconds, protect_at)
+    def hit(self, key: str, window_seconds: int, protect_at: int) -> int:
+        """Count one failure and return the new count."""
+        with self._lock:
+            self.count(key, window_seconds)
+            q = self.hits[self._key(key)]
+            q.append(time.monotonic())
+            new = len(q)
+            _prune(self.hits, window_seconds, protect_at)
+            return new
 
     def reset(self, key: str) -> None:
-        self.hits.pop(self._key(key), None)
+        with self._lock:
+            self.hits.pop(self._key(key), None)
 
     def clear(self) -> None:
-        self.hits.clear()
+        with self._lock:
+            self.hits.clear()
+
+
+# Sign-ins for the same account run one at a time, so a burst of parallel requests cannot all pass the
+# failure checks before any of them is counted. Striped by a hash of the email: bounded memory, and
+# different accounts rarely wait for each other. Correct for one process; with several workers the
+# counters must move to the database or Redis anyway.
+_ACCOUNT_LOCKS = [threading.Lock() for _ in range(256)]
+
+
+def account_lock(email: str) -> threading.Lock:
+    return _ACCOUNT_LOCKS[hashlib.sha256(email.strip().lower().encode()).digest()[0]]
 
 
 login_limiter = RateLimiter(10, 300, "login")

@@ -8,6 +8,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import (
     account_failures,
+    account_lock,
     client_ip,
     current_user,
     login_failures,
@@ -54,6 +55,12 @@ LOCKED_HINT = (
 
 @router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    # One sign-in at a time per account: the failure checks and counts below happen as one step.
+    with account_lock(body.email):
+        return _login(body, request, db)
+
+
+def _login(body: LoginIn, request: Request, db: Session) -> TokenOut:
     """Sign in.
 
     Two failure limits, neither of which an attacker can get around by changing IP address:
@@ -78,8 +85,9 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
 
     def record_totp_failure(user: User) -> None:
         record_failure()
-        totp_failures.hit(email, window, protect_at=settings.totp_failures_per_account)
-        if totp_failures.count(email, window) == settings.totp_failures_per_account:
+        limit = settings.totp_failures_per_account
+        new = totp_failures.hit(email, window, protect_at=limit)
+        if new - 1 < limit <= new:  # alert once, when the count first reaches the limit
             audit(db, "anonymous", "auth.totp_lock", "user", user.id)
             # Sent now: background tasks do not run when the request ends in an error, as this one does.
             send_email(

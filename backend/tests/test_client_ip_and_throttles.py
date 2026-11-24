@@ -183,3 +183,35 @@ def test_rotating_ipv6_addresses_in_one_64_share_a_lock(client, admin):
         assert login(client, f"guess-{i}", f"2001:db8:1:2::{i + 1:x}").status_code == 401
     assert login(client, ADMIN_PASSWORD, "2001:db8:1:2::abcd").status_code == 429
     assert login(client, ADMIN_PASSWORD, "2001:db8:9:9::1").status_code == 200
+
+
+def test_ipv4_written_as_ipv6_is_limited_by_its_ipv4_address():
+    assert rate_key_ip("::ffff:203.0.113.9") == "203.0.113.9"
+    assert rate_key_ip("::ffff:198.51.100.1") != rate_key_ip("::ffff:203.0.113.9")
+    assert rate_key_ip("64:ff9b::cb00:7109") == "203.0.113.9"  # NAT64
+    assert rate_key_ip("2002:cb00:7109::1") == "203.0.113.9"  # 6to4
+    assert rate_key_ip("2001:0:4136:e378:8000:63bf:3fff:fdd2") == "192.0.2.45"  # Teredo
+
+
+def test_ipv4_mapped_clients_do_not_share_a_lock(client, admin):
+    for i in range(10):
+        assert login(client, f"guess-{i}", "::ffff:203.0.113.66").status_code == 401
+    assert login(client, ADMIN_PASSWORD, "::ffff:203.0.113.66").status_code == 429
+    assert login(client, ADMIN_PASSWORD, "::ffff:198.51.100.20").status_code == 200
+
+
+def test_parallel_two_factor_guesses_cannot_overshoot_the_ceiling(client, admin):
+    """A burst of simultaneous wrong codes is counted one at a time: at most 10 get through to be checked."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    enable_2fa(client, admin)
+    emailer.outbox.clear()
+
+    def guess(i: int) -> int:
+        return login(client, ADMIN_PASSWORD, f"203.0.113.{i}", code="000000").status_code
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        codes = list(pool.map(guess, range(40)))
+    assert codes.count(401) == 10 and codes.count(429) == 30
+    alerts = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
+    assert len(alerts) == 1
