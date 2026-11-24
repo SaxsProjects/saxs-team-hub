@@ -158,8 +158,7 @@ def test_two_factor_guessing_has_a_hard_account_wide_ceiling(client, admin):
     # Now everything is refused for this account, even the right code, from any IP...
     assert login(client, ADMIN_PASSWORD, "198.51.100.20", code=pyotp.TOTP(secret).now()).status_code == 429
     # ...and the owner has been warned that their password is known.
-    alerts = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
-    assert len(alerts) == 1
+    assert len(wait_for_alerts()) == 1
 
 
 def test_two_factor_ceiling_also_applies_during_an_account_lock(client, admin):
@@ -213,5 +212,49 @@ def test_parallel_two_factor_guesses_cannot_overshoot_the_ceiling(client, admin)
     with ThreadPoolExecutor(max_workers=16) as pool:
         codes = list(pool.map(guess, range(40)))
     assert codes.count(401) == 10 and codes.count(429) == 30
-    alerts = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
-    assert len(alerts) == 1
+    assert len(wait_for_alerts()) == 1
+
+
+def wait_for_alerts(timeout: float = 5.0) -> list:
+    """The alert is sent on its own thread; wait briefly for it."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        alerts = [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
+        if alerts or time.monotonic() > deadline:
+            time.sleep(0.2)  # catch any duplicate
+            return [m for m in emailer.outbox if m.to == ADMIN_EMAIL and "Security alert" in m.subject]
+        time.sleep(0.05)
+
+
+def test_a_slow_sign_in_does_not_block_other_attempts(client, admin, monkeypatch):
+    """No lock is held across password hashing: a second sign-in proceeds while the first is still checking."""
+    import threading
+
+    from app.routers import auth
+
+    started, release = threading.Event(), threading.Event()
+    real_verify = auth.verify_password
+
+    def slow_verify(hashed, password):
+        if password == "slow-one":
+            started.set()
+            release.wait(5)
+        return real_verify(hashed, password)
+
+    monkeypatch.setattr(auth, "verify_password", slow_verify)
+    t = threading.Thread(target=lambda: login(client, "slow-one", "203.0.113.1"))
+    t.start()
+    assert started.wait(5)
+    # While the first request is stuck in the password check, the owner can still sign in.
+    assert login(client, ADMIN_PASSWORD, "198.51.100.20").status_code == 200
+    release.set()
+    t.join(5)
+
+
+def test_asking_for_the_code_is_not_counted_as_a_failure(client, admin):
+    enable_2fa(client, admin)
+    for _ in range(15):
+        r = login(client, ADMIN_PASSWORD, "198.51.100.20")
+        assert r.status_code == 401 and r.json()["detail"] == "totp_required"

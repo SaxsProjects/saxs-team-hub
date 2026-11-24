@@ -1,6 +1,5 @@
 """Request dependencies: current user, role checks, client IP and rate limiting."""
 
-import hashlib
 import ipaddress
 import threading
 import time
@@ -205,6 +204,30 @@ class AccountThrottle:
             _prune(self.hits, window_seconds, protect_at)
             return new
 
+    def try_reserve(self, key: str, limit: int, window_seconds: int) -> int:
+        """Atomically count an attempt if under `limit`. Returns the new count, or 0 if the limit is reached.
+
+        Reserving before the (slow) checks means parallel requests cannot all pass the limit before any is
+        counted. A request that turns out not to be a failure gives its slot back with `refund`.
+        """
+        with self._lock:
+            if self.count(key, window_seconds) >= limit:
+                return 0
+            q = self.hits[self._key(key)]
+            q.append(time.monotonic())
+            new = len(q)
+            _prune(self.hits, window_seconds, limit)
+            return new
+
+    def refund(self, key: str) -> None:
+        """Give back one reserved slot."""
+        with self._lock:
+            q = self.hits.get(self._key(key))
+            if q:
+                q.pop()
+                if not q:
+                    del self.hits[self._key(key)]
+
     def reset(self, key: str) -> None:
         with self._lock:
             self.hits.pop(self._key(key), None)
@@ -212,17 +235,6 @@ class AccountThrottle:
     def clear(self) -> None:
         with self._lock:
             self.hits.clear()
-
-
-# Sign-ins for the same account run one at a time, so a burst of parallel requests cannot all pass the
-# failure checks before any of them is counted. Striped by a hash of the email: bounded memory, and
-# different accounts rarely wait for each other. Correct for one process; with several workers the
-# counters must move to the database or Redis anyway.
-_ACCOUNT_LOCKS = [threading.Lock() for _ in range(256)]
-
-
-def account_lock(email: str) -> threading.Lock:
-    return _ACCOUNT_LOCKS[hashlib.sha256(email.strip().lower().encode()).digest()[0]]
 
 
 login_limiter = RateLimiter(10, 300, "login")

@@ -1,3 +1,4 @@
+import threading
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
@@ -8,7 +9,6 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import (
     account_failures,
-    account_lock,
     client_ip,
     current_user,
     login_failures,
@@ -53,17 +53,28 @@ LOCKED_HINT = (
 )
 
 
+def _send_totp_alert(to: str) -> None:
+    settings = get_settings()
+    msg = OutgoingEmail(
+        to=to,
+        subject=f"Security alert for your {settings.company_name} Team Hub account",
+        text=(
+            "Someone entered your correct password but wrong two-factor codes many times, so "
+            f"sign-in to your account is blocked for {settings.login_lockout_minutes} minutes.\n\n"
+            "If this wasn't you, your password is known to someone else. Change it as soon as "
+            f"the block ends: {link('/forgot-password')}"
+        ),
+    )
+    # Off the request thread: SMTP can be slow, and background tasks do not run when a request ends in an
+    # error, as this one does. send_email never raises.
+    threading.Thread(target=send_email, args=(msg,), daemon=True).start()
+
+
 @router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
 def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
-    # One sign-in at a time per account: the failure checks and counts below happen as one step.
-    with account_lock(body.email):
-        return _login(body, request, db)
-
-
-def _login(body: LoginIn, request: Request, db: Session) -> TokenOut:
     """Sign in.
 
-    Two failure limits, neither of which an attacker can get around by changing IP address:
+    Failure limits that cannot be dodged by changing IP address:
     - account + IP: after `login_failures_per_account_ip` failures that IP is locked out of the account.
       An attacker only locks themselves out, not the owner.
     - account (all IPs): after `login_failures_per_account` failures only a correct password AND
@@ -71,76 +82,66 @@ def _login(body: LoginIn, request: Request, db: Session) -> TokenOut:
       get in. Accounts without 2FA wait for the lock to expire.
     - wrong two-factor codes (all IPs): after `totp_failures_per_account` every sign-in is refused until
       the lock expires, and the owner is emailed, because whoever is guessing already has the password.
-    Locked responses are identical for every account, existing or not, so they reveal nothing.
+
+    Each attempt reserves its slot in the counters atomically before the slow checks (password hashing,
+    database), and successful steps give the slot back. Parallel requests therefore cannot slip past a
+    limit, and no lock is held while anything slow runs. Locked responses are identical for every
+    account, existing or not, so they reveal nothing.
     """
     settings = get_settings()
     email = body.email.lower()
     window = settings.login_lockout_minutes * 60
     pair = f"{email}|{rate_key_ip(client_ip(request))}"
-    locked = HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED_HINT.format(minutes=settings.login_lockout_minutes))
+    totp_limit = settings.totp_failures_per_account
 
-    def record_failure() -> None:
-        login_failures.hit(pair, window, protect_at=settings.login_failures_per_account_ip)
-        account_failures.hit(email, window, protect_at=settings.login_failures_per_account)
-
-    def record_totp_failure(user: User) -> None:
-        record_failure()
-        limit = settings.totp_failures_per_account
-        new = totp_failures.hit(email, window, protect_at=limit)
-        if new - 1 < limit <= new:  # alert once, when the count first reaches the limit
-            audit(db, "anonymous", "auth.totp_lock", "user", user.id)
-            # Sent now: background tasks do not run when the request ends in an error, as this one does.
-            send_email(
-                OutgoingEmail(
-                    to=user.email,
-                    subject=f"Security alert for your {settings.company_name} Team Hub account",
-                    text=(
-                        "Someone entered your correct password but wrong two-factor codes many times, so "
-                        f"sign-in to your account is blocked for {settings.login_lockout_minutes} minutes.\n\n"
-                        "If this wasn't you, your password is known to someone else. Change it as soon as "
-                        f"the block ends: {link('/forgot-password')}"
-                    ),
-                ),
-            )
-
-    if totp_failures.blocked(email, settings.totp_failures_per_account, window) or login_failures.blocked(
-        pair, settings.login_failures_per_account_ip, window
-    ):
-        audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account_ip"})
+    def locked(scope: str) -> HTTPException:
+        audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": scope})
         db.commit()
-        raise locked
-    account_locked = account_failures.blocked(email, settings.login_failures_per_account, window)
+        return HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED_HINT.format(minutes=settings.login_lockout_minutes))
+
+    if totp_failures.blocked(email, totp_limit, window):
+        raise locked("totp")
+    if not login_failures.try_reserve(pair, settings.login_failures_per_account_ip, window):
+        raise locked("account_ip")
+    account_reserved = bool(account_failures.try_reserve(email, settings.login_failures_per_account, window))
 
     user = db.scalar(select(User).where(User.email == email))
     password_ok = bool(user and user.is_active and verify_password(user.password_hash, body.password))
     if not user:
         burn_password_check(body.password)
-    if account_locked:
-        # Only password + correct two-factor code gets through, and every failure looks the same.
-        code_ok = bool(
-            password_ok
-            and user.totp_enabled
-            and body.totp_code
-            and verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code)
-        )
-        if not code_ok:
-            if password_ok and user.totp_enabled and body.totp_code:
-                record_totp_failure(user)
-            else:
-                record_failure()
-            audit(db, "anonymous", "auth.login_locked", "user", None, after={"scope": "account"})
-            db.commit()
-            raise locked
+
+    def check_code() -> bool | None:
+        """Verify the two-factor code, counted against the account-wide ceiling. None = ceiling reached."""
+        n = totp_failures.try_reserve(email, totp_limit, window)
+        if not n:
+            return None
+        if verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
+            totp_failures.refund(email)
+            return True
+        if n == totp_limit:  # exactly one request reaches the limit, so the alert goes out once
+            audit(db, "anonymous", "auth.totp_lock", "user", user.id)
+            _send_totp_alert(user.email)
+        return False
+
+    if not account_reserved:
+        # Account-wide lock: only password + correct two-factor code gets through; every failure looks the same.
+        if not (password_ok and user.totp_enabled and body.totp_code and check_code()):
+            raise locked("account")
     else:
         if not password_ok:
-            record_failure()
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong email or password")  # slots stay counted
         if user.totp_enabled:
             if not body.totp_code:
+                # Not a failure: the client asks for the code next. Give both slots back.
+                login_failures.refund(pair)
+                account_failures.refund(email)
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
-            if not verify_totp(decrypt_text(user.totp_secret_enc), body.totp_code):
-                record_totp_failure(user)
+            ok = check_code()
+            if ok is None:
+                raise locked("totp")
+            if not ok:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong two-factor code")
+        account_failures.refund(email)
     login_failures.reset(pair)
     user.last_login_at = datetime.now(UTC)
     audit(db, user.email, "auth.login", "user", user.id)
