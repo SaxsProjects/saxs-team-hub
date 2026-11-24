@@ -24,8 +24,13 @@ services:
         sync: false
       - key: JOBS_TOKEN
         sync: false
+      # Until the React frontend exists, use this service's own URL: the API serves
+      # the offer and password pages that email links open.
       - key: FRONTEND_URL
         sync: false
+      # true = interactive API docs at /docs, to manage the Team Hub from a browser
+      - key: ENABLE_API_DOCS
+        value: "true"
       - key: CORS_ORIGINS
         sync: false
       - key: ADMIN_NOTIFY_EMAIL

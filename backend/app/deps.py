@@ -27,6 +27,9 @@ def current_user(
     user = db.get(User, int(payload["sub"]))
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account not active")
+    issued_ms = int(payload.get("iat_ms") or int(payload.get("iat", 0)) * 1000)
+    if user.sessions_valid_after and issued_ms < int(user.sessions_valid_after.timestamp() * 1000):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session ended, please sign in again")
     return user
 
 

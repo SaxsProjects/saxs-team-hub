@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     jobs_token: str = ""
 
     access_token_minutes: int = 60
+    # Interactive API docs at /docs. Always on outside production; in production only when set,
+    # e.g. so the founder can use the API from a browser until the frontend is built.
+    enable_api_docs: bool = False
     require_admin_2fa: bool | None = None  # defaults to True in production
 
     frontend_url: str = "http://localhost:5173"
@@ -58,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        return self.enable_api_docs or not self.is_production
 
     @property
     def admin_2fa_required(self) -> bool:

@@ -43,6 +43,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Sessions (JWTs) issued before this moment are rejected: set on password change/reset and deactivation.
+    sessions_valid_after: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     person: Mapped["Person | None"] = relationship()
 

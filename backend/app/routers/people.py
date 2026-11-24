@@ -1,14 +1,16 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
 from ..deps import require_admin
+from ..emailer import OutgoingEmail, send_email
 from ..models import STAGES, Document, OnboardingItem, Person, User
 from ..schemas import (
+    AccessIn,
     DocumentOut,
     OnboardingItemOut,
     OnboardingUpdate,
@@ -19,7 +21,16 @@ from ..schemas import (
     StageIn,
 )
 from ..security import decrypt_json, encrypt_json
-from ..services import MANUAL_STAGE_MOVES, audit, complete_onboarding_item, set_stage, store_document
+from ..services import (
+    MANUAL_STAGE_MOVES,
+    audit,
+    complete_onboarding_item,
+    issue_action_token,
+    link,
+    revoke_sessions,
+    set_stage,
+    store_document,
+)
 
 router = APIRouter(prefix="/api", tags=["people"])
 
@@ -210,3 +221,54 @@ def list_documents(person_id: int, db: Session = Depends(get_db), _: User = Depe
     return db.scalars(
         select(Document).where(Document.person_id == get_person(db, person_id).id).order_by(Document.created_at)
     ).all()
+
+
+# ---- Team member accounts -------------------------------------------------------------
+
+
+def member_account(db: Session, person: Person) -> User:
+    user = db.scalar(select(User).where(User.person_id == person.id, User.role == "member"))
+    if not user:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "This person has no Team Hub account yet (it is created when they accept an offer)"
+        )
+    return user
+
+
+@router.post("/people/{person_id}/invite", status_code=204)
+def resend_invite(
+    person_id: int, background: BackgroundTasks, db: Session = Depends(get_db), admin: User = Depends(require_admin)
+):
+    """Email a fresh 7-day set-password link (older links stop working)."""
+    person = get_person(db, person_id)
+    user = member_account(db, person)
+    if not user.is_active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Turn this person's access back on first")
+    token = issue_action_token(db, user, "set_password", timedelta(days=7))
+    audit(db, admin.email, "user.invite_resent", "user", user.id)
+    db.commit()
+    settings = get_settings()
+    background.add_task(
+        send_email,
+        OutgoingEmail(
+            to=user.email,
+            subject=f"Your {settings.company_name} Team Hub account",
+            text=(
+                f"Hi {person.full_name},\n\nSet your Team Hub password here (valid for 7 days):\n"
+                f"{link('/set-password?token=' + token)}\n\n{settings.company_name}"
+            ),
+        ),
+    )
+
+
+@router.post("/people/{person_id}/access", response_model=PersonOut)
+def set_access(person_id: int, body: AccessIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Turn a team member's sign-in on or off (offboarding). Turning it off signs them out everywhere."""
+    person = get_person(db, person_id)
+    user = member_account(db, person)
+    user.is_active = body.active
+    if not body.active:
+        revoke_sessions(user)
+    audit(db, admin.email, "user.access", "user", user.id, after={"active": body.active})
+    db.commit()
+    return person_out(person)

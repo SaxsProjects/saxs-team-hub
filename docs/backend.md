@@ -7,8 +7,8 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 
 | Area | Endpoints | Who |
 |---|---|---|
-| Auth | `POST /api/auth/login` · `POST /api/auth/set-password` · `POST /api/auth/change-password` · `GET /api/auth/me` · `POST /api/auth/2fa/setup` · `POST /api/auth/2fa/enable` | everyone |
-| People | `GET/POST /api/people` · `GET/PATCH/DELETE /api/people/{id}` · `POST /api/people/{id}/stage` · `PUT/GET /api/people/{id}/sensitive` · `GET/POST /api/people/{id}/documents` | admin |
+| Auth | `POST /api/auth/login` · `POST /api/auth/set-password` (invite or reset link) · `POST /api/auth/forgot-password` · `POST /api/auth/change-password` (returns a new token, signs out other sessions) · `GET /api/auth/me` · `POST /api/auth/2fa/setup` · `POST /api/auth/2fa/enable` | everyone |
+| People | `GET/POST /api/people` · `GET/PATCH/DELETE /api/people/{id}` · `POST /api/people/{id}/stage` · `PUT/GET /api/people/{id}/sensitive` · `GET/POST /api/people/{id}/documents` · `POST /api/people/{id}/invite` (new set-password link) · `POST /api/people/{id}/access` (`{"active": false}` at offboarding signs them out everywhere) | admin |
 | Offers | `GET/POST /api/offers` · `GET/PATCH /api/offers/{id}` · `POST /api/offers/{id}/pdf` · `POST /api/offers/{id}/send` · `POST /api/offers/{id}/revoke` · `GET /api/pipeline` | admin |
 | Candidate link | `GET /api/public/offers/{token}` · `GET …/{token}/pdf` · `POST …/{token}/accept` · `POST …/{token}/decline` | anyone with the link |
 | Onboarding | `GET /api/people/{id}/onboarding` · `PATCH /api/onboarding/{item}` | admin |
@@ -16,6 +16,22 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 | Statements | `GET /api/payouts/{id}/statement.pdf` | admin, or the contributor it belongs to |
 | Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
 | System | `GET /api/health` · `GET /api/audit` (admin) · `POST /api/jobs/daily` (`X-Jobs-Token`) | |
+
+## Pages for email links
+
+People who click links in emails don't need any frontend: the backend serves simple, accessible HTML pages (no JavaScript) that use exactly the same rules as the API.
+
+| Page | Who | What |
+|---|---|---|
+| `/offer/<token>` | candidate | Read the offer, open the PDF, accept by typing their full name, or decline with an optional reason |
+| `/set-password?token=…` | new team member | Choose a password from the invite link (valid 7 days) |
+| `/forgot-password` → `/reset-password?token=…` | team member / founder | Request and use a 1-hour reset link |
+
+Set `FRONTEND_URL` to the API's own URL until the React frontend exists, so email links point at these pages. The founder can manage everything else from the interactive API docs at `/docs` (set `ENABLE_API_DOCS=true` in production; every admin action still needs a signed-in admin with two-factor on).
+
+## Sessions
+
+Sessions are 60-minute tokens. Changing or resetting a password, or turning a member's access off, signs that account out everywhere: tokens issued before that moment are rejected.
 
 ## How the rules from the plan are enforced
 

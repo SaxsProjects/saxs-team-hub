@@ -31,6 +31,14 @@ class SetPasswordIn(BaseModel):
     password: str = Field(min_length=10, max_length=200)
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class AccessIn(BaseModel):
+    active: bool
+
+
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str = Field(min_length=10, max_length=200)

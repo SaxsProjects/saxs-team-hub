@@ -12,7 +12,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import client_ip, public_offer_limiter, require_admin
 from ..emailer import OutgoingEmail, notify_admin, send_email
-from ..models import ActionToken, Offer, OfferResponse, Person, User
+from ..models import Offer, OfferResponse, Person, User
 from ..pdf import acceptance_record_pdf
 from ..schemas import (
     AcceptIn,
@@ -24,8 +24,19 @@ from ..schemas import (
     PublicOfferOut,
 )
 from ..security import canonical_hash, hash_token, new_token
-from ..services import audit, end_of_day_utc, ensure_onboarding, set_stage, store_document, today_local
+from ..services import (
+    audit,
+    end_of_day_utc,
+    ensure_onboarding,
+    issue_action_token,
+    link,
+    set_stage,
+    store_document,
+    today_local,
+)
 from .people import get_person, read_pdf_upload
+
+INVITE_VALID_FOR = timedelta(days=7)
 
 router = APIRouter(prefix="/api", tags=["offers"])
 public = APIRouter(prefix="/api/public/offers", tags=["public offers"], dependencies=[Depends(public_offer_limiter)])
@@ -172,7 +183,7 @@ def send_offer(offer_id: int, background: BackgroundTasks, db: Session = Depends
     db.commit()
 
     settings = get_settings()
-    link = f"{settings.frontend_url.rstrip('/')}/offer/{token}"
+    offer_link = link(f"/offer/{token}")
     background.add_task(
         send_email,
         OutgoingEmail(
@@ -181,14 +192,14 @@ def send_offer(offer_id: int, background: BackgroundTasks, db: Session = Depends
             text=(
                 f"Hi {offer.person.full_name},\n\n"
                 f"{settings.company_name} would like to offer you the role of {offer.role}.\n\n"
-                f"Read the offer and accept or decline here (this link is personal to you):\n{link}\n\n"
+                f"Read the offer and accept or decline here (this link is personal to you):\n{offer_link}\n\n"
                 f"Please respond by {offer.deadline:%d %B %Y}.\n\n"
                 f"Kind regards,\n{settings.company_name}"
             ),
             reply_to=settings.admin_notify_email or None,
         ),
     )
-    return offer_out(offer, OfferSentOut, offer_link=link)
+    return offer_out(offer, OfferSentOut, offer_link=offer_link)
 
 
 @router.post("/offers/{offer_id}/revoke", response_model=OfferOut)
@@ -377,13 +388,8 @@ def accept_offer(token: str, body: AcceptIn, request: Request, background: Backg
         db.flush()
     if user.role == "member":
         user.person_id = person.id
-        setup_token = new_token()
-        db.add(
-            ActionToken(
-                user_id=user.id, purpose="set_password", token_hash=hash_token(setup_token), expires_at=now + timedelta(days=7)
-            )
-        )
-        setup_link = f"{settings.frontend_url.rstrip('/')}/set-password?token={setup_token}"
+        setup_token = issue_action_token(db, user, "set_password", INVITE_VALID_FOR)
+        setup_link = link(f"/set-password?token={setup_token}")
     audit(
         db,
         "candidate",

@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import AuditLog, Document, OnboardingItem, Person
-from .security import sha256_bytes
+from .models import ActionToken, AuditLog, Document, OnboardingItem, Person, User
+from .security import hash_token, new_token, sha256_bytes
 
 
 def local_tz() -> ZoneInfo:
@@ -100,3 +100,24 @@ def set_stage(db: Session, person: Person, stage: str, actor: str) -> None:
 
 def payout_due_date(received: date) -> date:
     return received + timedelta(days=get_settings().payout_delay_days)
+
+
+def revoke_sessions(user: User) -> None:
+    """Sign the user out everywhere: tokens issued before now stop working."""
+    user.sessions_valid_after = datetime.now(UTC)
+
+
+def issue_action_token(db: Session, user: User, purpose: str, valid_for: timedelta) -> str:
+    """Create a one-time link token (only its hash is stored) and invalidate older ones for the same purpose."""
+    now = datetime.now(UTC)
+    for old in db.scalars(
+        select(ActionToken).where(ActionToken.user_id == user.id, ActionToken.purpose == purpose, ActionToken.used_at.is_(None))
+    ):
+        old.used_at = now
+    token = new_token()
+    db.add(ActionToken(user_id=user.id, purpose=purpose, token_hash=hash_token(token), expires_at=now + valid_for))
+    return token
+
+
+def link(path: str) -> str:
+    return f"{get_settings().frontend_url.rstrip('/')}{path}"

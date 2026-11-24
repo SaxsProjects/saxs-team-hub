@@ -50,7 +50,14 @@ def create_access_token(user_id: int, role: str) -> tuple[str, int]:
     settings = get_settings()
     expires_in = settings.access_token_minutes * 60
     now = datetime.now(UTC)
-    payload = {"sub": str(user_id), "role": role, "iat": now, "exp": now + timedelta(seconds=expires_in)}
+    payload = {
+        "sub": str(user_id),
+        "role": role,
+        "iat": now,
+        # millisecond issue time, so "sign out everywhere" also catches tokens from the same second
+        "iat_ms": int(now.timestamp() * 1000),
+        "exp": now + timedelta(seconds=expires_in),
+    }
     return jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM), expires_in
 
 

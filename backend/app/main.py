@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .jobs import run_daily
-from .routers import auth, me, offers, people, projects
+from .routers import auth, me, offers, pages, people, projects
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -23,9 +23,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=f"{settings.company_name} Team Hub API",
         version="1.0.0",
-        docs_url=None if settings.is_production else "/docs",
+        docs_url="/docs" if settings.api_docs_enabled else None,
         redoc_url=None,
-        openapi_url=None if settings.is_production else "/openapi.json",
+        openapi_url="/openapi.json" if settings.api_docs_enabled else None,
     )
 
     app.add_middleware(
@@ -43,7 +43,8 @@ def create_app() -> FastAPI:
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("Cache-Control", "no-store")
-        if not request.url.path.startswith("/docs"):
+        is_pdf = response.headers.get("content-type", "").startswith("application/pdf")
+        if not request.url.path.startswith("/docs") and not is_pdf:
             response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         if settings.is_production:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     for module in (auth, people, offers, projects, me):
         app.include_router(module.router)
     app.include_router(offers.public)
+    app.include_router(pages.router)
 
     @app.get("/api/health", tags=["system"])
     def health(db: Session = Depends(get_db)):
