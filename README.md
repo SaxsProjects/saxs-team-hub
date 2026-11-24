@@ -4,7 +4,7 @@ Internal platform for **recruiting, onboarding and paying** the SaxsProjects tea
 
 It replaces sending PDFs on WhatsApp and tracking replies by hand. With it, SaxsProjects can send a formal offer, record an accept or decline with proof, onboard new team members securely, and calculate project-based payouts accurately.
 
-> **Status:** planning. This README is the build plan. No application code has been written yet.
+> **Status:** backend built (phases 0–4: offers, pipeline, notifications, onboarding, payouts) with tests and CI. The frontend is still to be built. See [docs/backend.md](docs/backend.md).
 
 ---
 
@@ -196,7 +196,30 @@ saxs-team-hub/
 
 ## 10. Getting Started
 
-Setup instructions will be added in Phase 0.
+### Run the backend locally
+
+```bash
+cd backend
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env                 # then fill in SECRET_KEY etc.
+python -m app.cli generate-keys      # paste the output into .env
+alembic upgrade head                 # create the database tables
+python -m app.cli create-admin you@saxsprojects.co.za
+uvicorn app.main:app --reload        # API on http://localhost:8000, docs at /docs
+```
+
+Run the checks: `pytest`, `ruff check .`, `ruff format --check .`.
+
+### Deploy (Render + Neon)
+
+1. Create a free PostgreSQL database on [Neon](https://neon.tech) and copy its connection string.
+2. In Render choose **New → Blueprint** and pick this repository; [`render.yaml`](render.yaml) sets up the API. Fill in the secret values it asks for, using `python -m app.cli generate-keys` for `SECRET_KEY`, `FIELD_ENCRYPTION_KEY` and `JOBS_TOKEN`.
+3. Email goes through **Zoho Mail**: `SMTP_HOST=smtppro.zoho.com` (or `smtp.zoho.com` for a free @zoho.com address), port 465, your full Zoho address, and an app-specific password from Zoho Accounts → Security → App Passwords. Check it from the Render shell with `python -m app.cli check-email`.
+4. From the Render shell, run `python -m app.cli create-admin you@saxsprojects.co.za`, sign in, and turn on two-factor authentication (`/api/auth/2fa/setup` then `/api/auth/2fa/enable`). Admin routes stay locked until it is on.
+5. Add the repository secrets `TEAM_HUB_API_URL` and `TEAM_HUB_JOBS_TOKEN` so the daily jobs run.
+
+Keep `FIELD_ENCRYPTION_KEY` safe and backed up: without it, stored banking details can't be read.
 
 ---
 
