@@ -1,0 +1,91 @@
+.page { max-width: 1144px; margin: 0 auto; display: grid; gap: 20px; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 4px; }
+.page-greeting { font-size: 29px; font-weight: 600; line-height: 41px; letter-spacing: -0.01em; }
+.page-date { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.page-head .btn { margin-top: 7px; }
+.grid-2-1 { display: grid; grid-template-columns: minmax(0, 752fr) minmax(0, 372fr); gap: 20px; align-items: stretch; }
+.stats-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+
+.focus-card { background: var(--brand-tint); border-color: transparent; padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 138px; }
+.focus-title { font-size: 22px; font-weight: 600; line-height: 31px; margin-top: 9px; }
+.focus-sub { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.momentum-card { background: var(--success-tint); border-color: transparent; padding: 21px 22px; min-height: 138px; }
+.momentum-label { font-size: 15px; font-weight: 600; line-height: 21px; color: var(--success); }
+.momentum-line { display: flex; align-items: baseline; gap: 12px; margin-top: 15px; flex-wrap: wrap; }
+.momentum-value { font-size: 28px; font-weight: 600; line-height: 39px; }
+.momentum-sub { font-size: 12px; color: var(--success); }
+.momentum-bars { display: flex; gap: 8px; margin-top: 14px; }
+.momentum-bars span { flex: 1; height: 6px; border-radius: 3px; background: var(--success-bar-off); }
+.momentum-bars span.on { background: var(--success-bar); }
+.due-card .momentum-value { display: block; margin-top: 10px; }
+.caps { text-transform: uppercase; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: var(--success); }
+
+.stat-card { padding: 15px 20px 16px; }
+.stat-label { font-size: 12px; font-weight: 500; color: var(--muted); }
+.stat-value { font-size: 27px; font-weight: 600; line-height: 38px; margin-top: 6px; }
+.stat-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.stat-note.warning { color: var(--warning-ink); }
+
+.attention-list, .task-list, .checklist, .timeline { list-style: none; margin: 0; padding: 0; }
+.attention { display: flex; align-items: center; gap: 14px; padding: 16px 22px; }
+.attention + .attention { border-top: 1px solid var(--border); margin: 0 22px; padding-inline: 0; }
+.attention-icon { width: 35px; height: 35px; flex: none; border-radius: var(--radius-md); display: grid; place-items: center; }
+.tone-brand.attention-icon { background: var(--brand-tint); color: var(--brand); }
+.tone-warning.attention-icon { background: var(--warning-tint); color: var(--warning-ink); }
+.tone-success.attention-icon { background: var(--success-chip); color: var(--success); }
+.attention-text { flex: 1; min-width: 0; }
+.attention-title { font-size: 13px; font-weight: 600; line-height: 18px; }
+.attention-detail { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.attention-action { width: 120px; flex: none; }
+.attention-when { font-size: 10px; color: var(--muted); margin-top: 5px; }
+
+.payouts-card { padding: 18px 22px 22px; display: flex; flex-direction: column; align-items: flex-start; }
+.payouts-value { font-size: 31px; font-weight: 600; line-height: 43px; margin: 7px 0 8px; }
+.payouts-btn { justify-content: space-between; margin: 17px 0 10px; }
+
+.table-wrap { overflow-x: auto; }
+.row-link { color: var(--ink); }
+.timeline { padding: 8px 22px 20px; }
+.tl-item { position: relative; padding: 0 0 18px 20px; }
+.tl-item::before { content: ""; position: absolute; left: 0; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
+.tl-item:not(:last-child)::after { content: ""; position: absolute; left: 3px; top: 17px; bottom: 2px; width: 1px; background: var(--border); }
+.tl-item.tone-success::before { background: var(--success); }
+.tl-item.tone-amber::before { background: var(--activity-amber); }
+.tl-title { font-size: 12px; font-weight: 500; line-height: 17px; }
+.tl-sub { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+.task { display: flex; align-items: center; gap: 14px; padding: 16px 22px; }
+.task + .task { border-top: 1px solid var(--border); }
+.task-text { flex: 1; min-width: 0; }
+.task-title { font-size: 14px; font-weight: 600; line-height: 20px; }
+.task-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.checklist { padding: 10px 22px; display: grid; gap: 12px; }
+.checklist li { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+.checklist li.next { color: var(--ink); font-weight: 600; }
+.check-dot { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--chip); color: var(--muted); }
+.done .check-dot { background: var(--success-chip); color: var(--success); }
+.next .check-dot { background: var(--brand); color: #fff; }
+.card-foot { padding: 6px 22px 20px; }
+.share-list { margin: 0; padding: 14px 22px; display: grid; gap: 12px; }
+.share-list div { display: flex; justify-content: space-between; font-size: 12px; }
+.share-list dt { color: var(--muted); }
+.share-list dd { margin: 0; font-size: 13px; font-weight: 600; }
+.locked-note { display: flex; align-items: center; gap: 6px; margin: 0 22px; padding: 8px 10px; border-radius: var(--radius); background: var(--success-chip); color: var(--success); font-size: 11px; font-weight: 500; }
+.formula { font-size: 10px; color: var(--muted); padding: 12px 22px 20px; }
+
+@media (max-width: 1100px) {
+  .stats-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .grid-2-1 { grid-template-columns: minmax(0, 1fr); }
+  .page-head { flex-direction: column; }
+  .page-greeting { font-size: 24px; line-height: 32px; }
+  .focus-card { flex-direction: column; align-items: flex-start; }
+  .task { flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .stats-4 { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .attention { flex-wrap: wrap; }
+  .attention-action { width: auto; padding-left: 49px; }
+  .attention + .attention { margin: 0 16px; }
+}

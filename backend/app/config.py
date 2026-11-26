@@ -21,7 +21,16 @@ class Settings(BaseSettings):
     field_encryption_key: str = ""
     jobs_token: str = ""
 
-    access_token_minutes: int = 60
+    # Sign-in: a short access pass, renewed in the background through an HttpOnly cookie while the
+    # person is active. The sign-in ends after `session_idle_minutes` without a renewal, and in any
+    # case `session_max_hours` after signing in (`admin_session_max_hours` for the founder).
+    access_token_minutes: int = 15
+    session_idle_minutes: int = 30
+    session_max_hours: int = 12
+    admin_session_max_hours: int = 8
+    # Two tabs renewing at the same moment both present the same cookie; allow that briefly.
+    session_renew_grace_seconds: int = 10
+    session_cookie_secure: bool | None = None  # defaults to True in production
     # Interactive API docs at /docs. Always on outside production; in production only when set,
     # e.g. so the founder can use the API from a browser until the frontend is built.
     enable_api_docs: bool = False
@@ -121,8 +130,21 @@ class Settings(BaseSettings):
         return self.is_production if self.require_admin_2fa is None else self.require_admin_2fa
 
     @property
+    def cookie_secure(self) -> bool:
+        return self.is_production if self.session_cookie_secure is None else self.session_cookie_secure
+
+    @property
+    def session_cookie_name(self) -> str:
+        # The __Host- prefix makes browsers refuse the cookie unless it is Secure, host-only and Path=/.
+        return "__Host-teamhub_session" if self.cookie_secure else "teamhub_session"
+
+    @property
     def cors_origin_list(self) -> list[str]:
-        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+        if "*" in origins:
+            # With the sign-in cookie (credentials) a wildcard would let any website use it.
+            raise ValueError("CORS_ORIGINS must list exact addresses; '*' is not allowed")
+        return origins
 
     @property
     def smtp_configured(self) -> bool:

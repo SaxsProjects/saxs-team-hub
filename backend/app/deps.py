@@ -238,6 +238,7 @@ class AccountThrottle:
 
 
 login_limiter = RateLimiter(10, 300, "login")
+refresh_limiter = RateLimiter(60, 300, "refresh")  # the app renews about every 14 minutes per tab
 login_failures = AccountThrottle("login-failures")  # keyed by account + IP: the hard lock
 account_failures = AccountThrottle("account-failures")  # keyed by account: stops spread-out guessing
 totp_failures = AccountThrottle("totp-failures")  # keyed by account: hard ceiling on 2FA code guesses

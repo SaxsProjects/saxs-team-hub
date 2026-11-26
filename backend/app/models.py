@@ -61,6 +61,28 @@ class User(Base):
     person: Mapped["Person | None"] = relationship()
 
 
+class SignInSession(Base):
+    """One signed-in browser or device. The renewal cookie holds a random token; only its hash is stored.
+
+    Each renewal replaces the token. The previous hash is kept so a stolen, already-used token is
+    recognised: presenting it ends the session.
+    """
+
+    __tablename__ = "sign_in_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    previous_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_used_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    renewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    ended_reason: Mapped[str | None] = mapped_column(String(32))
+    user_agent: Mapped[str | None] = mapped_column(String(200))
+
+
 class ActionToken(Base):
     """One-time tokens emailed to people (e.g. set your password). Only the hash is stored."""
 
