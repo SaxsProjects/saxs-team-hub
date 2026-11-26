@@ -20,6 +20,7 @@ It also generates SECRET_KEY, FIELD_ENCRYPTION_KEY and JOBS_TOKEN if the output 
 Running it again keeps existing passwords and keys (it only fills in what is missing).
 """
 
+import os
 import secrets
 import sys
 from pathlib import Path
@@ -46,7 +47,15 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 def write_env(path: Path, values: dict[str, str]) -> None:
-    path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
+    """Write secrets readable by the owner only: mode 0600 on Linux/macOS. On Windows, keep the file
+    in a folder whose ACL grants only your account (docs/deploy.md)."""
+    data = "".join(f"{k}={v}\n" for k, v in values.items()).encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)  # also tightens a file that already existed
 
 
 def password_of(url: str) -> str | None:
