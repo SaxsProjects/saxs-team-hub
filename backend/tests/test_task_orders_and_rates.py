@@ -3,15 +3,11 @@
 import random
 from datetime import date, timedelta
 
-import pytest
-
 from app.db import SessionLocal
 from app.models import Person, TaskOrder
 from app.payouts import Instalment, calculate_payout, calculate_payout_by_instalment
 from app.services import today_local
 from app.terms import task_fee_due_date
-
-from .conftest import accept, member_login
 
 # ---- Payout engine: one rate per instalment ------------------------------------------------------
 
@@ -93,13 +89,6 @@ def test_task_fee_due_dates():
 
 
 # ---- API ---------------------------------------------------------------------------------------
-
-
-@pytest.fixture
-def team(client, admin, sent_offer):
-    person, _, token = sent_offer
-    accept(client, token)
-    return person, member_login(client)
 
 
 def other_person(client, admin, *, fee_terms="standard"):

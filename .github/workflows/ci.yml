@@ -43,5 +43,23 @@ jobs:
           alembic upgrade head
           alembic check
           python -m scripts.check_db_guards
+      - name: Backup restores into an empty PostgreSQL database
+        run: |
+          export BACKUP_KEY=$(python -m scripts.backup generate-key)  # throwaway key for this run
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/teamhub python -m scripts.backup backup /tmp/teamhub.bak
+          python -m scripts.backup verify /tmp/teamhub.bak
+          python -c "import psycopg; c = psycopg.connect('postgresql://postgres:postgres@localhost:5432/postgres', autocommit=True); c.execute('CREATE DATABASE restore_drill')"
+          export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/restore_drill
+          alembic upgrade head
+          python -m scripts.backup restore /tmp/teamhub.bak
+          # The restored ids must not block new rows: insert after restoring, then compare a fresh backup.
+          python - <<'EOF'
+          import psycopg
+          with psycopg.connect("postgresql://postgres:postgres@localhost:5432/restore_drill") as c:
+              before = c.execute("SELECT count(*) FROM audit_log").fetchone()[0]
+              assert before > 0, "nothing was restored"
+              c.execute("INSERT INTO audit_log (at, actor, action, entity) VALUES (now(), 'ci', 'restore.drill', 'ci')")
+              print("ok: restored", before, "audit rows and new rows still insert")
+          EOF
       - run: pip-audit -r requirements.txt
 

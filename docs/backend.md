@@ -112,3 +112,16 @@ Production refuses to start without the signature, and the app checks the image 
 - Each sign-in attempt reserves its slot in the counters atomically **before** the slow checks (password hashing, database) and gives it back if that step succeeds. A burst of parallel requests cannot slip past a limit, and no lock is ever held while anything slow runs, so hammering one account cannot stall the server. The two-factor alert email is sent on its own thread.
 - At most `RESET_EMAILS_PER_ACCOUNT_PER_HOUR` (3) password-reset emails are sent per account; the response is always the same.
 - These counters are in memory: correct for one Render instance. Move them to the database or Redis before running more than one. Memory is bounded at 10,000 keys per counter; when full, expired and low-count keys are dropped first and active lockouts are never dropped, so flooding cannot clear a lock.
+
+
+## Screens API (Phase B backend)
+
+One request per screen, aggregated in the database:
+
+- `GET /api/dashboard` (founder): payouts unpaid / due now / due in 7 days / waiting for the First Client Payment / payment requested / paid this year; invoices outstanding and overdue; quotations awaiting an answer; Task Orders by status and overdue reviews; people by status; money received this year.
+- `GET /api/me/overview` (team member): current rate, amount owed, due now, how many payouts can be requested, next due date, amount waiting for the First Client Payment, paid this year, Task Orders to confirm / in progress / awaiting review, open onboarding items.
+- `GET /api/payment-list.csv` (founder, `?requested_only=true` optional): unpaid payouts that are due, to pay from in the banking app. Deliberately without bank account numbers (beneficiaries live in the bank); cells are protected against spreadsheet formula injection; every export is audited.
+
+## Backups
+
+`scripts/backup.py` writes an encrypted, authenticated logical backup (gzip JSON + Fernet), taken from one database snapshot. `verify` checks a file without a database; `restore` loads into an empty database migrated to the same revision, in one transaction, and moves the id sequences past the restored rows. CI restores a backup into a fresh PostgreSQL database on every change. See `docs/deploy.md` for the monthly routine.
