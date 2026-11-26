@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     environment: str = Field("development", description="development | test | production")
 
     database_url: str = "sqlite:///./teamhub.db"
+    # Optional separate login for migrations (owns the tables). The app itself then runs as a
+    # login that can only read and write rows, so it can never alter or drop tables.
+    migration_database_url: str = ""
 
     # Secrets: required in production (generate with `python -m app.cli generate-keys`).
     secret_key: str = "dev-only-insecure-secret-change-me"  # noqa: S105 - refused in production
@@ -91,7 +94,7 @@ class Settings(BaseSettings):
     totp_failures_per_account: int = 10
     reset_emails_per_account_per_hour: int = 3
 
-    @field_validator("database_url")
+    @field_validator("database_url", "migration_database_url")
     @classmethod
     def _normalise_db_url(cls, value: str) -> str:
         # Neon/Heroku style URLs -> SQLAlchemy psycopg3 driver.
@@ -149,6 +152,13 @@ class Settings(BaseSettings):
             problems.append("FIELD_ENCRYPTION_KEY must be set")
         if self.database_url.startswith("sqlite"):
             problems.append("DATABASE_URL must point to PostgreSQL")
+        for name, url in (("DATABASE_URL", self.database_url), ("MIGRATION_DATABASE_URL", self.migration_database_url)):
+            if (
+                url
+                and not url.startswith("sqlite")
+                and not any(f"sslmode={mode}" in url for mode in ("require", "verify-ca", "verify-full"))
+            ):
+                problems.append(f"{name} must use an encrypted connection (sslmode=require or stricter)")
         if not self.smtp_configured:
             problems.append("SMTP_HOST, SMTP_USER and SMTP_PASS must be set so notifications are delivered")
         if not self.admin_notify_email:

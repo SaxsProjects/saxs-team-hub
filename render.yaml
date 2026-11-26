@@ -20,7 +20,11 @@ services:
       # Proxy layers in front of the app whose X-Forwarded-For entries are trusted (Render: 1).
       - key: TRUSTED_PROXY_HOPS
         value: "1"
+      # Runtime login: can only read and write rows (see docs/deploy.md).
       - key: DATABASE_URL
+        sync: false
+      # Table owner, used only by `alembic upgrade head` at start-up.
+      - key: MIGRATION_DATABASE_URL
         sync: false
       - key: SECRET_KEY
         sync: false

@@ -5,6 +5,7 @@ import logging
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -65,12 +66,14 @@ def create_app() -> FastAPI:
             database = True
         except Exception:  # noqa: BLE001 - report, don't crash the probe
             database = False
-        return {
-            "ok": True,
+        body = {
+            "ok": database,
             "database": database,
             "email": settings.smtp_configured,
             "signature": settings.signature_configured,
         }
+        # 503 when the database is unreachable, so the host's health check notices and restarts.
+        return JSONResponse(body, status_code=200 if database else 503)
 
     @app.post("/api/jobs/daily", tags=["system"])
     def daily_jobs(x_jobs_token: str = Header(default=""), db: Session = Depends(get_db)):

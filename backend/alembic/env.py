@@ -1,4 +1,4 @@
-"""Alembic migrations. The database URL comes from the app settings (DATABASE_URL)."""
+"""Alembic migrations. Uses MIGRATION_DATABASE_URL (the table owner) when set, else DATABASE_URL."""
 
 from logging.config import fileConfig
 
@@ -10,7 +10,8 @@ from app.config import get_settings
 from app.db import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
+_settings = get_settings()
+config.set_main_option("sqlalchemy.url", (_settings.migration_database_url or _settings.database_url).replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
