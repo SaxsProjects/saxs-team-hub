@@ -10,10 +10,19 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import current_user, require_admin, require_member
 from ..models import AuditLog, Document, OnboardingItem, Payout, ProjectContributor, User
-from ..schemas import AuditOut, DocumentOut, OnboardingItemOut, OnboardingUpdate, PayoutOut, PersonOut, SensitiveIn
+from ..schemas import (
+    AuditOut,
+    DocumentOut,
+    OnboardingItemOut,
+    OnboardingUpdate,
+    PayoutOut,
+    PersonOut,
+    RatePeriodOut,
+    SensitiveIn,
+)
 from ..security import decrypt_json
 from ..services import audit
-from .people import mask, person_out, save_sensitive
+from .people import current_rate, mask, person_out, save_sensitive
 
 router = APIRouter(prefix="/api", tags=["team member"])
 
@@ -68,16 +77,25 @@ def my_projects(db: Session = Depends(get_db), user: User = Depends(require_memb
             "client": c.project.client_name,
             "status": c.project.status,
             "work_share_bp": c.work_share_bp,
-            "rate_bp": c.rate_bp,
+            "rate_bp": c.rate_bp,  # rate when added to the project
+            "current_rate_bp": current_rate(user.person),  # each instalment uses the rate on its payment date
             "locked_at": c.locked_at,
         }
         for c in rows
     ]
 
 
+@router.get("/me/rates", response_model=list[RatePeriodOut])
+def my_rates(user: User = Depends(require_member)):
+    """My recorded rate changes. Before the first one, the initial 15% applies."""
+    return user.person.rate_periods
+
+
 @router.get("/me/payouts", response_model=list[PayoutOut])
 def my_payouts(db: Session = Depends(get_db), user: User = Depends(require_member)):
-    return db.scalars(select(Payout).where(Payout.person_id == user.person_id).order_by(Payout.due_at)).all()
+    return db.scalars(
+        select(Payout).where(Payout.person_id == user.person_id).order_by(Payout.due_at.asc().nulls_last(), Payout.id)
+    ).all()
 
 
 @router.get("/me/documents", response_model=list[DocumentOut])

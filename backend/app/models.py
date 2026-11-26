@@ -27,6 +27,11 @@ ROLES = ("admin", "member")
 QUOTATION_STATUSES = ("draft", "issued", "accepted", "declined", "expired")
 INVOICE_STATUSES = ("draft", "issued", "part_paid", "paid", "void")
 PAYMENT_METHODS = ("eft", "cash", "card", "other")
+TASK_ORDER_STATUSES = ("proposed", "confirmed", "submitted", "accepted", "declined", "cancelled")
+PAYOUT_KINDS = ("revenue_share", "task_fee")
+# Task-fee agreements: "standard" pays 7 days after acceptance; "deferred" (SP/ICA/2026/004 and 005) holds
+# fees for tasks accepted before the First Client Payment until 30 days after that payment.
+FEE_TERMS = ("standard", "deferred")
 
 # Contractor agreement: 15% initial rate, 20% after a written review.
 INITIAL_RATE_BP = 1500
@@ -76,6 +81,7 @@ class Person(Base):
     status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
     rate_bp: Mapped[int] = mapped_column(Integer, default=INITIAL_RATE_BP)
     rate_review_note: Mapped[str | None] = mapped_column(Text)
+    fee_terms: Mapped[str] = mapped_column(String(16), default="standard", server_default="standard")
     # Encrypted at rest (Fernet). Only collected when needed (POPIA).
     sensitive_enc: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
@@ -87,6 +93,30 @@ class Person(Base):
     )
     documents: Mapped[list["Document"]] = relationship(
         back_populates="person", cascade="all, delete-orphan", foreign_keys="Document.person_id"
+    )
+    rate_periods: Mapped[list["RatePeriod"]] = relationship(cascade="all, delete-orphan", order_by="RatePeriod.effective_from")
+
+
+class RatePeriod(Base):
+    """A person's revenue-share rate from `effective_from` until the next period starts.
+
+    Each client instalment is shared at the rate in force on the date it was received. A person
+    with no period on or before a date is on the initial rate.
+    """
+
+    __tablename__ = "rate_periods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="CASCADE"), index=True)
+    rate_bp: Mapped[int] = mapped_column(Integer)
+    effective_from: Mapped[date] = mapped_column(Date)
+    review_note: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("person_id", "effective_from"),
+        CheckConstraint("rate_bp IN (1500, 2000)", name="ck_rate_period_rate"),
     )
 
 
@@ -229,26 +259,65 @@ class ProjectCost(Base):
     project: Mapped[Project] = relationship(back_populates="costs")
 
 
+class TaskOrder(Base):
+    """A fixed-fee task (Schedule B of the task-fee agreements). Binding once the contractor confirms it."""
+
+    __tablename__ = "task_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True)
+    person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="RESTRICT"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    deliverable: Mapped[str] = mapped_column(Text)
+    fee_cents: Mapped[int] = mapped_column(Integer)
+    due_on: Mapped[date] = mapped_column(Date)
+    fee_terms: Mapped[str] = mapped_column(String(16))  # copied from the person when the order is made
+    status: Mapped[str] = mapped_column(String(16), default="proposed", index=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    submitted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    submission_note: Mapped[str | None] = mapped_column(Text)
+    review_due_on: Mapped[date | None] = mapped_column(Date)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    accepted_on: Mapped[date | None] = mapped_column(Date)
+    closed_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    person: Mapped[Person] = relationship()
+
+    __table_args__ = (CheckConstraint("fee_cents > 0", name="ck_task_order_fee"),)
+
+
 class Payout(Base):
     __tablename__ = "payouts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="revenue_share", server_default="revenue_share")
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id", ondelete="RESTRICT"), index=True)
     person_id: Mapped[int] = mapped_column(ForeignKey("people.id", ondelete="RESTRICT"), index=True)
-    client_payment_id: Mapped[int] = mapped_column(ForeignKey("client_payments.id", ondelete="RESTRICT"))
+    client_payment_id: Mapped[int | None] = mapped_column(ForeignKey("client_payments.id", ondelete="RESTRICT"))
+    task_order_id: Mapped[int | None] = mapped_column(ForeignKey("task_orders.id", ondelete="RESTRICT"), unique=True)
     amount_cents: Mapped[int] = mapped_column(Integer)
-    due_at: Mapped[date] = mapped_column(Date)
+    # None while a deferred task fee is waiting for the First Client Payment.
+    due_at: Mapped[date | None] = mapped_column(Date)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     eft_reference: Mapped[str | None] = mapped_column(String(120))
     statement_number: Mapped[str] = mapped_column(String(32), unique=True)
     calculation: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
-    project: Mapped[Project] = relationship()
+    project: Mapped[Project | None] = relationship()
     person: Mapped[Person] = relationship()
-    client_payment: Mapped[ClientPayment] = relationship()
+    client_payment: Mapped[ClientPayment | None] = relationship()
+    task_order: Mapped[TaskOrder | None] = relationship()
 
-    __table_args__ = (UniqueConstraint("client_payment_id", "person_id"),)
+    __table_args__ = (
+        UniqueConstraint("client_payment_id", "person_id"),
+        CheckConstraint(
+            "(kind = 'revenue_share' AND project_id IS NOT NULL AND client_payment_id IS NOT NULL AND task_order_id IS NULL)"
+            " OR (kind = 'task_fee' AND task_order_id IS NOT NULL AND project_id IS NULL AND client_payment_id IS NULL)",
+            name="ck_payout_source",
+        ),
+    )
 
 
 # ---- Finance: clients, quotations, invoices, receipts, credit notes ------------------------------

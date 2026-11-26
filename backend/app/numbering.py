@@ -1,4 +1,4 @@
-"""Gapless document numbers: SP-Q-2026-001, SP-INV-2026-001, SP-R-2026-001, SP-CN-2026-001, SP-PS-2026-001.
+"""Gapless document numbers: SP-Q-2026-001, SP-INV-2026-001, SP-R-2026-001, SP-CN-2026-001, SP-PS-2026-001, SP-TO-2026-001.
 
 A number is assigned only when a document is issued, inside the same transaction. The sequence row
 is locked (SELECT ... FOR UPDATE on PostgreSQL), so two requests can never get the same number,
@@ -19,6 +19,7 @@ PREFIXES = {
     "R": "SP-R",
     "CN": "SP-CN",
     "PS": "SP-PS",
+    "TO": "SP-TO",
 }
 
 

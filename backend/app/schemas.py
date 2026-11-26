@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from .models import ALLOWED_RATES_BP
+from .models import ALLOWED_RATES_BP, FEE_TERMS
 
 
 class ORM(BaseModel):
@@ -77,6 +77,17 @@ class PersonUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     rate_bp: int | None = None
     rate_review_note: str | None = Field(default=None, max_length=2000)
+    rate_effective_from: date | None = Field(
+        default=None, description="Date of the written review the new rate applies from (default: today)"
+    )
+    fee_terms: str | None = Field(default=None, description="Task-fee terms: standard or deferred")
+
+    @field_validator("fee_terms")
+    @classmethod
+    def _fee_terms(cls, v):
+        if v is not None and v not in FEE_TERMS:
+            raise ValueError(f"fee_terms must be one of {FEE_TERMS}")
+        return v
 
     @field_validator("rate_bp")
     @classmethod
@@ -93,8 +104,19 @@ class PersonOut(ORM):
     phone: str | None
     status: str
     rate_bp: int
+    fee_terms: str = "standard"
     created_at: datetime
     has_sensitive_details: bool = False
+
+
+class RatePeriodOut(ORM):
+    id: int
+    person_id: int
+    rate_bp: int
+    effective_from: date
+    review_note: str
+    created_by: str
+    created_at: datetime
 
 
 class StageIn(BaseModel):
@@ -243,11 +265,13 @@ class CostOut(ORM):
 
 class PayoutOut(ORM):
     id: int
-    project_id: int
+    kind: str
+    project_id: int | None
     person_id: int
-    client_payment_id: int
+    client_payment_id: int | None
+    task_order_id: int | None
     amount_cents: int
-    due_at: date
+    due_at: date | None
     paid_at: datetime | None
     eft_reference: str | None
     statement_number: str
@@ -305,3 +329,61 @@ class AuditOut(ORM):
     before: dict | None
     after: dict | None
     at: datetime
+
+
+# ---- Task Orders (task-fee contractors) ----------------------------------------------------------
+
+
+class TaskOrderIn(BaseModel):
+    person_id: int
+    title: str = Field(min_length=3, max_length=200)
+    deliverable: str = Field(min_length=3, max_length=5000)
+    # Indicative fees are R150-R500; the cap only catches typing mistakes (R10,000).
+    fee_cents: int = Field(gt=0, le=1_000_000)
+    due_on: date
+
+
+class TaskOrderUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=200)
+    deliverable: str | None = Field(default=None, min_length=3, max_length=5000)
+    fee_cents: int | None = Field(default=None, gt=0, le=1_000_000)
+    due_on: date | None = None
+
+
+class TaskOrderNote(BaseModel):
+    note: str = Field(min_length=3, max_length=5000)
+
+
+class TaskOrderOptionalNote(BaseModel):
+    note: str | None = Field(default=None, max_length=5000)
+
+
+class TaskOrderAccept(BaseModel):
+    note: str | None = Field(default=None, max_length=5000)
+    accepted_on: date | None = Field(default=None, description="Default: today. Cannot be in the future.")
+
+
+class TaskOrderOut(ORM):
+    id: int
+    number: str
+    person_id: int
+    title: str
+    deliverable: str
+    fee_cents: int
+    due_on: date
+    fee_terms: str
+    status: str
+    confirmed_at: datetime | None
+    submitted_at: datetime | None
+    submission_note: str | None
+    review_due_on: date | None
+    review_note: str | None
+    accepted_on: date | None
+    closed_reason: str | None
+    created_at: datetime
+    review_overdue: bool = False
+
+
+class TaskOrderAcceptedOut(BaseModel):
+    task_order: TaskOrderOut
+    payout: PayoutOut

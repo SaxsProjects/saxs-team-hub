@@ -8,7 +8,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..deps import require_admin
 from ..emailer import OutgoingEmail, send_email
-from ..models import STAGES, Document, OnboardingItem, Person, User
+from ..models import INITIAL_RATE_BP, STAGES, Document, OnboardingItem, Person, RatePeriod, User
 from ..schemas import (
     AccessIn,
     DocumentOut,
@@ -17,6 +17,7 @@ from ..schemas import (
     PersonCreate,
     PersonOut,
     PersonUpdate,
+    RatePeriodOut,
     SensitiveIn,
     StageIn,
 )
@@ -30,13 +31,22 @@ from ..services import (
     revoke_sessions,
     set_stage,
     store_document,
+    today_local,
 )
+from ..terms import rate_at
 
 router = APIRouter(prefix="/api", tags=["people"])
 
 
+def current_rate(p: Person) -> int:
+    today = today_local()
+    started = [r for r in p.rate_periods if r.effective_from <= today]
+    return max(started, key=lambda r: r.effective_from).rate_bp if started else INITIAL_RATE_BP
+
+
 def person_out(p: Person) -> PersonOut:
     out = PersonOut.model_validate(p)
+    out.rate_bp = current_rate(p)  # from the rate history, so a review dated ahead takes effect on its date
     out.has_sensitive_details = bool(p.sensitive_enc)
     return out
 
@@ -75,26 +85,88 @@ def read_person(person_id: int, db: Session = Depends(get_db), _: User = Depends
 def update_person(person_id: int, body: PersonUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     person = get_person(db, person_id)
     changes = body.model_dump(exclude_unset=True)
-    if "rate_bp" in changes and changes["rate_bp"] != person.rate_bp and not changes.get("rate_review_note"):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Changing the rate needs rate_review_note (the written review it is based on)"
+    new_rate = changes.pop("rate_bp", None)
+    note = changes.pop("rate_review_note", None)
+    effective_from = changes.pop("rate_effective_from", None) or today_local()
+    before = {"rate_bp": current_rate(person), "fee_terms": person.fee_terms}
+    if new_rate is not None:
+        rate_then = rate_at(db, person.id, effective_from)
+        if new_rate == rate_then:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"The rate on {effective_from} is already {new_rate / 100:g}%. To withdraw a change dated ahead, "
+                "use DELETE /api/people/{id}/rates/{period_id}",
+            )
+        if not (note and note.strip()):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Changing the rate needs rate_review_note (the written review it is based on)"
+            )
+        if any(r.effective_from == effective_from for r in person.rate_periods):
+            raise HTTPException(status.HTTP_409_CONFLICT, f"A rate change dated {effective_from} is already recorded")
+        period = RatePeriod(
+            person_id=person.id, rate_bp=new_rate, effective_from=effective_from, review_note=note.strip(), created_by=admin.email
         )
-    before = {"rate_bp": person.rate_bp}
+        person.rate_periods.append(period)
+        db.flush()
+        person.rate_review_note = note.strip()
+        person.rate_bp = current_rate(person)
+        audit(
+            db,
+            admin.email,
+            "person.rate_change",
+            "person",
+            person.id,
+            {"rate_bp": rate_then},
+            {"rate_bp": new_rate, "effective_from": str(effective_from), "rate_period_id": period.id},
+        )
     for key, value in changes.items():
         setattr(person, key, value.lower() if key == "email" and value else value)
-    audit(db, admin.email, "person.update", "person", person.id, before, {"fields": sorted(changes), "rate_bp": person.rate_bp})
+    audit(
+        db,
+        admin.email,
+        "person.update",
+        "person",
+        person.id,
+        before,
+        {"fields": sorted(body.model_dump(exclude_unset=True)), "rate_bp": current_rate(person), "fee_terms": person.fee_terms},
+    )
     db.commit()
     return person_out(person)
+
+
+@router.get("/people/{person_id}/rates", response_model=list[RatePeriodOut])
+def rate_history(person_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Every recorded rate change, oldest first. Before the first one the initial 15% applies."""
+    return get_person(db, person_id).rate_periods
+
+
+@router.delete("/people/{person_id}/rates/{period_id}", status_code=204)
+def withdraw_future_rate(person_id: int, period_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Withdraw a rate change that has not started yet. Changes already in force are history and stay."""
+    period = db.get(RatePeriod, period_id)
+    if not period or period.person_id != person_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Rate change not found")
+    if period.effective_from <= today_local():
+        raise HTTPException(status.HTTP_409_CONFLICT, "This rate is already in force; record a new rate change instead")
+    person = get_person(db, person_id)
+    withdrawn = {"rate_bp": period.rate_bp, "effective_from": str(period.effective_from)}
+    person.rate_periods.remove(period)
+    db.flush()
+    person.rate_bp = current_rate(person)
+    audit(db, admin.email, "person.rate_withdraw", "person", person_id, withdrawn)
+    db.commit()
 
 
 @router.delete("/people/{person_id}", status_code=204)
 def delete_person(person_id: int, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Erase a person's data (POPIA). Not allowed once they have payout records."""
     person = get_person(db, person_id)
-    from ..models import Payout, ProjectContributor
+    from ..models import Payout, ProjectContributor, TaskOrder
 
-    if db.scalar(select(Payout.id).where(Payout.person_id == person.id).limit(1)) or db.scalar(
-        select(ProjectContributor.id).where(ProjectContributor.person_id == person.id).limit(1)
+    if (
+        db.scalar(select(Payout.id).where(Payout.person_id == person.id).limit(1))
+        or db.scalar(select(ProjectContributor.id).where(ProjectContributor.person_id == person.id).limit(1))
+        or db.scalar(select(TaskOrder.id).where(TaskOrder.person_id == person.id).limit(1))
     ):
         raise HTTPException(
             status.HTTP_409_CONFLICT, "This person has project or payout records that must be kept for tax purposes"
