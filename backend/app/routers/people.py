@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..avatars import avatar_url
 from ..config import get_settings
 from ..db import get_db
 from ..deps import require_admin
@@ -48,6 +49,7 @@ def person_out(p: Person) -> PersonOut:
     out = PersonOut.model_validate(p)
     out.rate_bp = current_rate(p)  # from the rate history, so a review dated ahead takes effect on its date
     out.has_sensitive_details = bool(p.sensitive_enc)
+    out.avatar_url = avatar_url(p.account)
     return out
 
 

@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..avatars import avatar_url
 from ..config import get_settings
 from ..db import get_db
 from ..deps import (
@@ -231,6 +232,8 @@ def me(user: User = Depends(current_user)):
         person_id=user.person_id,
         totp_enabled=user.totp_enabled,
         two_factor_required=user.role == "admin" and get_settings().admin_2fa_required,
+        full_name=user.person.full_name if user.person else None,
+        avatar_url=avatar_url(user),
     )
 
 

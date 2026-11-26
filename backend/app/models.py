@@ -54,6 +54,9 @@ class User(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     # Sessions (JWTs) issued before this moment are rejected: set on password change/reset and deactivation.
     sessions_valid_after: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Profile picture: a cleaned 512x512 WebP (see app/avatars.py). Deferred so it loads only when served.
+    avatar: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    avatar_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     person: Mapped["Person | None"] = relationship()
 
@@ -95,6 +98,7 @@ class Person(Base):
         back_populates="person", cascade="all, delete-orphan", foreign_keys="Document.person_id"
     )
     rate_periods: Mapped[list["RatePeriod"]] = relationship(cascade="all, delete-orphan", order_by="RatePeriod.effective_from")
+    account: Mapped["User | None"] = relationship(viewonly=True, uselist=False, primaryjoin="User.person_id == Person.id")
 
 
 class RatePeriod(Base):
