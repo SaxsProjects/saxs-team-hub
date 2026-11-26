@@ -31,9 +31,14 @@ Data location: Neon `aws-eu-central-1` (Frankfurt) and Render Frankfurt. Persona
 
 ## Backups
 
-Neon's free plan only keeps a short restore window. Invoices, payouts and signed acceptances must be kept for years, so take an encrypted backup at least monthly (and before any risky change):
+Backups run on their own, using the read-only `teamhub_backup` login (it can read every table and change nothing):
 
-1. Once: `python -m scripts.backup generate-key` and save the key in the password manager as `BACKUP_KEY` (separate from `FIELD_ENCRYPTION_KEY`).
-2. Monthly, from `backend/` with `MIGRATION_DATABASE_URL` and `BACKUP_KEY` set: `python -m scripts.backup backup teamhub-YYYY-MM.bak`. It refuses to overwrite an older file and checks the new one can be decrypted.
-3. Keep the files in two places (for example the laptop and Google Drive). They are encrypted; the personal fields inside are encrypted a second time with `FIELD_ENCRYPTION_KEY`.
-4. To restore: create an empty database, `alembic upgrade` it to the backup's revision (shown by `verify`), then `python -m scripts.backup restore FILE`.
+| Where | When | Kept |
+|---|---|---|
+| GitHub Actions (`.github/workflows/backup.yml`), as a private artifact | Sundays 02:30 SAST | 90 days |
+| The founder's laptop: Task Scheduler task "SaxsProjects Team Hub backup" running `backend/scripts/local_backup.ps1` into `%USERPROFILE%\.saxs-team-hubackups` (log: `backup.log`) | Sundays 10:00, or the next time the laptop is on | Forever |
+
+The cloud backup needs two repository secrets, `TEAM_HUB_BACKUP_DATABASE_URL` and `TEAM_HUB_BACKUP_KEY` (values in `.saxs-team-hub\github-secrets.env`). GitHub emails the owner if a scheduled run fails. Files are gzip JSON encrypted and authenticated with Fernet; the personal fields inside are encrypted again with `FIELD_ENCRYPTION_KEY`. **Keep `BACKUP_KEY` and `FIELD_ENCRYPTION_KEY` in Bitwarden** — without them backups cannot be read.
+
+Manual backup or check: `python -m scripts.backup backup FILE` / `verify FILE`.
+To restore: create an empty database, `alembic upgrade` it to the revision `verify` shows, then `python -m scripts.backup restore FILE`. CI rehearses this on PostgreSQL on every change.
