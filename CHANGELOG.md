@@ -4,6 +4,13 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.2.1] - 2026-11-26
+
+### Changed
+- Web app built with Vite 8 and React Router 8; tests run on Vitest 5 with jest-dom 8.
+- CI and backups use the current GitHub Actions (checkout 7, setup-python 7, setup-java 6, upload-artifact 7).
+- Android release APKs are now built and signed by the release workflow itself.
+
 ## [1.2.0] - 2026-11-26
 
 ### Added
