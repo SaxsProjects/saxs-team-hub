@@ -60,6 +60,8 @@ class MeOut(BaseModel):
     person_id: int | None
     totp_enabled: bool
     two_factor_required: bool
+    full_name: str | None = None
+    avatar_url: str | None = None
 
 
 # ---- People -------------------------------------------------------------------
@@ -107,6 +109,7 @@ class PersonOut(ORM):
     fee_terms: str = "standard"
     created_at: datetime
     has_sensitive_details: bool = False
+    avatar_url: str | None = None
 
 
 class RatePeriodOut(ORM):
