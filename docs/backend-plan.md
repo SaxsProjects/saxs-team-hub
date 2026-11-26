@@ -194,6 +194,8 @@ entitlement_to_date = cumulative_net × rate_at_payment_date × work_share
 payout_now          = entitlement_to_date − payouts already made on this project (never below 0)
 ```
 
+> **Built differently (26 Nov 2026):** multiplying the whole cumulative amount by the rate on the latest payment date would pay 20% on income received while the contractor was still on 15%. The agreement says the review rate applies *from the date* of the written review, so the backend shares each instalment at the rate in force on the day it was received (see `docs/backend.md`, "Rate history").
+
 - A cost recorded after an earlier payout lowers the next payout. It never creates a negative payout or a debt.
 - The rate is taken from `rate_periods` at the date of the client payment.
 - Rounding happens once, half-up to the cent. The full working is saved in `calculation_json`.

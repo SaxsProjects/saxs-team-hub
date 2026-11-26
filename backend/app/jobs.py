@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .emailer import notify_admin
-from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, User
+from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, TaskOrder, User
 from .payouts import format_zar
 from .services import audit, today_local
 
@@ -34,7 +34,7 @@ def remind_due_payouts(db: Session) -> int:
     if due:
         lines = [
             f"- {p.statement_number}: {p.person.full_name}, {format_zar(p.amount_cents)} "
-            f"for {p.project.name}, due {p.due_at:%d %b %Y}"
+            f"for {p.project.name if p.project else 'Task Order ' + p.task_order.number}, due {p.due_at:%d %b %Y}"
             for p in due
         ]
         notify_admin(
@@ -46,12 +46,30 @@ def remind_due_payouts(db: Session) -> int:
     return len(due)
 
 
+def remind_overdue_reviews(db: Session) -> int:
+    """Submitted tasks the founder has not reviewed within the 5 days the agreement promises."""
+    late = db.scalars(
+        select(TaskOrder)
+        .where(TaskOrder.status == "submitted", TaskOrder.review_due_on < today_local())
+        .order_by(TaskOrder.review_due_on)
+    ).all()
+    if late:
+        lines = [f"- {o.number}: {o.title} ({o.person.full_name}), review was due {o.review_due_on:%d %b %Y}" for o in late]
+        notify_admin(
+            f"{len(late)} task review(s) overdue",
+            "These submitted tasks are waiting for you to accept them or explain what remains:\n\n" + "\n".join(lines),
+        )
+    return len(late)
+
+
 def apply_retention(db: Session) -> int:
     """Delete candidates who declined (or let the offer expire) longer ago than the retention period."""
     cutoff = datetime.now(UTC) - timedelta(days=get_settings().declined_retention_days)
     purged = 0
     for person in db.scalars(select(Person).where(Person.status.in_(("declined", "expired")), Person.updated_at < cutoff)):
-        if db.scalar(select(ProjectContributor.id).where(ProjectContributor.person_id == person.id).limit(1)):
+        keep = db.scalar(select(ProjectContributor.id).where(ProjectContributor.person_id == person.id).limit(1))
+        keep = keep or db.scalar(select(TaskOrder.id).where(TaskOrder.person_id == person.id).limit(1))
+        if keep:  # project and task records must be kept for tax purposes
             continue
         for user in db.scalars(select(User).where(User.person_id == person.id)):
             db.delete(user)
@@ -101,5 +119,6 @@ def run_daily(db: Session) -> dict:
         "quotations_expired": expire_quotations(db),
         "invoices_overdue": remind_overdue_invoices(db),
         "payouts_due": remind_due_payouts(db),
+        "task_reviews_overdue": remind_overdue_reviews(db),
         "people_purged": apply_retention(db),
     }

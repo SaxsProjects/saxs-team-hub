@@ -421,7 +421,12 @@ def payout_statement_pdf(
     doc.row("Received from client to date", format_zar(calc["received_to_date_cents"]))
     doc.row("Direct project costs to date", format_zar(calc["costs_to_date_cents"]))
     doc.row("Net project income", format_zar(calc["net_income_cents"]), bold=True)
-    doc.row("Your rate", format_bp(calc["rate_bp"]))
+    segments = calc.get("rate_segments") or []
+    if segments:
+        for seg in segments:
+            doc.row(f"Instalment {seg['label']}: net income at {format_bp(seg['rate_bp'])}", format_zar(seg["net_cents"]))
+    else:
+        doc.row("Your rate", format_bp(calc["rate_bp"]))
     doc.row("Your agreed work share", format_bp(calc["work_share_bp"]))
     doc.row("Earned to date", format_zar(calc["earned_to_date_cents"]))
     doc.row("Already paid on earlier instalments", format_zar(calc["previously_allocated_cents"]))
@@ -432,9 +437,44 @@ def payout_statement_pdf(
     doc.ln(4)
     doc.para(
         "Calculation: net project income = amount received (excluding VAT) - direct project costs; "
-        "earned = net project income x rate x work share. Each client payment pays out the "
+        "earned = net project income x rate x work share, each instalment at the rate in force on the day "
+        "it was received (costs are set against the earliest instalments). Each client payment pays out the "
         "amount newly earned since earlier payments. Payouts are due "
         f"{get_settings().payout_delay_days} days after the client payment is received.",
+        size=9,
+    )
+    doc.signature_block("Issued by", issued_on)
+    return bytes(doc.output())
+
+
+def task_fee_statement_pdf(
+    *,
+    statement_number: str,
+    contributor: str,
+    task_number: str,
+    title: str,
+    deliverable: str,
+    fee_cents: int,
+    accepted_on: str,
+    due_at: str | None,
+    paid_at: str | None,
+    eft_reference: str | None,
+    issued_on: date | None = None,
+) -> bytes:
+    doc = _Doc(f"Task fee statement {statement_number}")
+    doc.row("Contractor", contributor)
+    doc.row("Task Order", f"{task_number} - {title}")
+    doc.row("Deliverable", deliverable[:300])
+    doc.ln(2)
+    doc.row("Accepted on", accepted_on)
+    doc.row("Fee", format_zar(fee_cents), bold=True)
+    doc.row("Due date", due_at or "After the First Client Payment (see your agreement, clause 5)")
+    doc.row("Paid", f"{paid_at} - EFT ref {eft_reference}" if paid_at else "Not yet paid")
+    doc.ln(4)
+    doc.para(
+        "The fee is the amount recorded in the Task Order. It is due 7 days after the task is accepted, "
+        "or, for tasks accepted before the Company's First Client Payment under deferred terms, within "
+        "30 days after that payment.",
         size=9,
     )
     doc.signature_block("Issued by", issued_on)

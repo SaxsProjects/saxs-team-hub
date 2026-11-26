@@ -8,18 +8,19 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 | Area | Endpoints | Who |
 |---|---|---|
 | Auth | `POST /api/auth/login` · `POST /api/auth/set-password` (invite or reset link) · `POST /api/auth/forgot-password` · `POST /api/auth/change-password` (returns a new token, signs out other sessions) · `GET /api/auth/me` · `POST /api/auth/2fa/setup` · `POST /api/auth/2fa/enable` | everyone |
-| People | `GET/POST /api/people` · `GET/PATCH/DELETE /api/people/{id}` · `POST /api/people/{id}/stage` · `PUT/GET /api/people/{id}/sensitive` · `GET/POST /api/people/{id}/documents` · `POST /api/people/{id}/invite` (new set-password link) · `POST /api/people/{id}/access` (`{"active": false}` at offboarding signs them out everywhere) | admin |
+| People | `GET/POST /api/people` · `GET/PATCH/DELETE /api/people/{id}` (a rate change takes `rate_bp`, `rate_review_note` and optional `rate_effective_from`; `fee_terms` is `standard` or `deferred`) · `GET /api/people/{id}/rates` · `POST /api/people/{id}/stage` · `PUT/GET /api/people/{id}/sensitive` · `GET/POST /api/people/{id}/documents` · `POST /api/people/{id}/invite` (new set-password link) · `POST /api/people/{id}/access` (`{"active": false}` at offboarding signs them out everywhere) | admin |
 | Offers | `GET/POST /api/offers` · `GET/PATCH /api/offers/{id}` · `POST /api/offers/{id}/pdf` · `POST /api/offers/{id}/send` · `POST /api/offers/{id}/revoke` · `GET /api/pipeline` | admin |
 | Candidate link | `GET /api/public/offers/{token}` · `GET …/{token}/pdf` · `POST …/{token}/accept` · `POST …/{token}/decline` | anyone with the link |
 | Onboarding | `GET /api/people/{id}/onboarding` · `PATCH /api/onboarding/{item}` | admin |
 | Projects & payouts | `GET/POST /api/projects` · `GET/PATCH /api/projects/{id}` · `PUT /api/projects/{id}/contributors` · `DELETE …/contributors/{person}` · `POST …/lock` · `POST …/costs` · `POST …/payments` · `GET /api/payouts` · `POST /api/payouts/{id}/paid` | admin |
-| Statements | `GET /api/payouts/{id}/statement.pdf` | admin, or the contributor it belongs to |
+| Task Orders | `GET/POST /api/task-orders` (`?status_filter=`, `?person_id=`, `?review_overdue=true`) · `GET/PATCH /api/task-orders/{id}` (PATCH only before the contractor confirms) · `POST …/accept` (creates the fee payout) · `POST …/request-changes` · `POST …/cancel` | admin |
+| Statements | `GET /api/payouts/{id}/statement.pdf` (revenue share or task fee) | admin, or the contributor it belongs to |
 | Clients | `GET/POST /api/clients` · `GET/PATCH /api/clients/{id}` | admin |
 | Quotations | `GET/POST /api/quotations` · `GET/PATCH/DELETE /api/quotations/{id}` (drafts only) · `POST …/issue` · `POST …/accept` (creates the project) · `POST …/decline` · `GET …/pdf` | admin |
 | Invoices | `GET/POST /api/invoices` (from an accepted quotation, optionally `portion_percent` for a deposit) · `GET/PATCH/DELETE /api/invoices/{id}` (drafts only) · `POST …/issue` · `POST …/payments` (issues a receipt, triggers payouts) · `POST …/credit-notes` · `GET …/receipts` · `GET …/credit-notes` · `GET …/pdf` | admin |
 | Receipts & credit notes | `GET /api/receipts/{id}/pdf` · `GET /api/credit-notes/{id}/pdf` | admin |
 | Finance overview | `GET /api/finance/readiness` (what is still missing, never the values) · `GET /api/finance/summary` | admin |
-| Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
+| Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `GET /api/me/rates` · `GET /api/me/task-orders` · `POST /api/me/task-orders/{id}/confirm` · `POST …/decline` · `POST …/submit` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
 | System | `GET /api/health` · `GET /api/audit` (admin) · `POST /api/jobs/daily` (`X-Jobs-Token`) | |
 
 ## Pages for email links
@@ -45,16 +46,23 @@ Sessions are 60-minute tokens. Changing or resetting a password, or turning a me
 - **Pipeline:** `draft → sent → viewed → accepted / declined / expired → agreement_signed → onboarded`. Every change is written to the append-only audit log.
 - **Notifications:** the founder (`ADMIN_NOTIFY_EMAIL`) is emailed when an offer is viewed (first time), accepted, declined or expires. The candidate gets a confirmation after responding. Accepting also creates their team-member account and emails a 7-day set-password link.
 - **Onboarding:** the 7-item checklist from the plan is created on acceptance. Members can tick "channel joined" and "standards read" themselves; the founder confirms the rest. Saving banking details or uploading the signed agreement ticks those items automatically.
-- **Payouts:** money is integer cents; rates and shares are basis points. Shares lock when the project moves to `in_progress` or the first client payment is recorded. Rates are 15% or 20%, and changing to 20% requires a written-review note. Each client payment creates payouts for what each contributor has *newly* earned:
+- **Payouts:** money is integer cents; rates and shares are basis points. Shares lock when the project moves to `in_progress` or the first client payment is recorded. Each client payment creates payouts for what each contributor has *newly* earned:
   `earned_to_date = max(0, received_to_date − costs_to_date) × rate × share`, `payout = earned_to_date − already_paid`.
   This handles instalments, never claws back, and makes later costs reduce later payouts. Payouts are due 7 days after the client payment.
+- **Rate history:** a rate change (15% ↔ 20%) needs a written-review note and is stored in `rate_periods` with the date it applies from (default today; it can be dated ahead or back to the review's date). The developer agreement says the 20% rate applies *from the date* of the written review and that each instalment is shared as it is received, so **each instalment is shared at the rate in force on the day it was received**. Direct costs are set against the earliest instalments first, and everything is rounded once:
+  `slice_j = max(0, R_j − C) − max(0, R_(j−1) − C)`, `earned_to_date = Σ slice_j × rate_j × share`.
+  With one rate throughout this is the same as the formula above. A review recorded late but dated earlier pays the difference on the next instalment; nothing is ever clawed back. The statement lists each instalment's rate when a project was paid at more than one rate.
+- **Task Orders (task-fee contractors):** `proposed → confirmed → submitted → accepted`, or `declined` by the contractor, or `cancelled` by the founder before submission; `request-changes` sends a submission back with a note. A Task Order is numbered `SP-TO-YYYY-NNN`, can be edited only until the contractor confirms it, and copies the person's `fee_terms`. Accepting it creates a `task_fee` payout with its own `SP-PS` statement:
+  - `standard` terms: due 7 days after acceptance.
+  - `deferred` terms (agreements SP/ICA/2026/004 and 005): a task accepted before the First Client Payment waits (no due date) and becomes due 30 days after that payment; a task accepted on or after it is due 7 days after acceptance. The First Client Payment is the earliest project payment or invoice receipt; recording it releases waiting fees automatically.
+  - The founder reviews a submission within 5 days. Late reviews are flagged (`review_overdue`) and emailed by the daily job.
 - **POPIA:** banking and ID details are encrypted (Fernet) and masked unless the founder explicitly reveals them (which is audited). Every offer page shows a privacy notice. The daily job deletes candidates who declined or let the offer expire after `DECLINED_RETENTION_DAYS` (365). The audit log stores ids, not names or contact details.
 - **Security:** argon2 password hashing, 60-minute JWT sessions, TOTP two-factor required for the admin in production, rate limiting on login and offer links, CORS allow-list, security headers (HSTS in production), PDF-only uploads up to 10 MB (checked by content, not file name). In production the app refuses to start without strong secrets, PostgreSQL and SMTP.
 - **Documents:** stored in the database with SHA-256 and a version number, so signed records survive redeploys.
 
 ## Daily jobs
 
-`python -m app.cli daily-jobs` or `POST /api/jobs/daily` with `X-Jobs-Token`. It expires overdue offers (and emails the founder, which is the "day after the deadline" reminder), emails a list of payouts that are due, expires quotations past their validity date, emails a list of overdue invoices, and applies POPIA retention. `.github/workflows/daily-jobs.yml` calls it every morning once the `TEAM_HUB_API_URL` and `TEAM_HUB_JOBS_TOKEN` repository secrets are set.
+`python -m app.cli daily-jobs` or `POST /api/jobs/daily` with `X-Jobs-Token`. It expires overdue offers (and emails the founder, which is the "day after the deadline" reminder), emails a list of payouts that are due (revenue share and task fees) and of task reviews past their 5-day deadline, expires quotations past their validity date, emails a list of overdue invoices, and applies POPIA retention. `.github/workflows/daily-jobs.yml` calls it every morning once the `TEAM_HUB_API_URL` and `TEAM_HUB_JOBS_TOKEN` repository secrets are set.
 
 ## Finance: quotations, invoices, receipts and credit notes
 

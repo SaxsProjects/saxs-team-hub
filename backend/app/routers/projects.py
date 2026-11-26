@@ -11,8 +11,8 @@ from ..db import get_db
 from ..deps import current_user, require_admin
 from ..models import PROJECT_STATUSES, ClientPayment, Payout, Project, ProjectContributor, ProjectCost, User
 from ..numbering import allocate_number
-from ..payouts import calculate_payout
-from ..pdf import payout_statement_pdf
+from ..payouts import Instalment, calculate_payout_by_instalment
+from ..pdf import payout_statement_pdf, task_fee_statement_pdf
 from ..schemas import (
     ContributorIn,
     ContributorOut,
@@ -28,6 +28,7 @@ from ..schemas import (
     ProjectUpdate,
 )
 from ..services import audit, payout_due_date, today_local
+from ..terms import rate_at, release_deferred_fees
 from .people import get_person
 
 router = APIRouter(prefix="/api", tags=["projects & payouts"])
@@ -126,15 +127,16 @@ def set_contributor(project_id: int, body: ContributorIn, db: Session = Depends(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, f"Work shares would add up to {(others + body.work_share_bp) / 100:g}% (max 100%)"
         )
+    current_rate = rate_at(db, person.id, today_local())
     if existing:
         before = {"work_share_bp": existing.work_share_bp}
         existing.work_share_bp = body.work_share_bp
-        existing.rate_bp = person.rate_bp
+        existing.rate_bp = current_rate
         contributor = existing
     else:
         before = None
         contributor = ProjectContributor(
-            project_id=project.id, person_id=person.id, work_share_bp=body.work_share_bp, rate_bp=person.rate_bp
+            project_id=project.id, person_id=person.id, work_share_bp=body.work_share_bp, rate_bp=current_rate
         )
         db.add(contributor)
     db.flush()
@@ -145,7 +147,7 @@ def set_contributor(project_id: int, body: ContributorIn, db: Session = Depends(
         "project",
         project.id,
         before,
-        {"person_id": person.id, "work_share_bp": body.work_share_bp, "rate_bp": person.rate_bp},
+        {"person_id": person.id, "work_share_bp": body.work_share_bp, "rate_bp": current_rate},
     )
     db.commit()
     return contributor
@@ -218,7 +220,9 @@ def record_client_payment(
         after={"project_id": project.id, "amount_cents": payment.amount_cents},
     )
 
-    received_to_date = db.scalar(select(func.sum(ClientPayment.amount_cents)).where(ClientPayment.project_id == project.id)) or 0
+    instalments = db.scalars(
+        select(ClientPayment).where(ClientPayment.project_id == project.id).order_by(ClientPayment.received_at, ClientPayment.id)
+    ).all()
     costs_to_date = db.scalar(select(func.sum(ProjectCost.amount_cents)).where(ProjectCost.project_id == project.id)) or 0
     payouts = []
     for c in project.contributors:
@@ -228,10 +232,13 @@ def record_client_payment(
             )
             or 0
         )
-        calc = calculate_payout(
-            received_to_date_cents=received_to_date,
+        # Each instalment is shared at the rate in force on the day it was received (agreement clause 5).
+        calc = calculate_payout_by_instalment(
+            instalments=[
+                Instalment(p.amount_cents, rate_at(db, c.person_id, p.received_at), p.received_at.isoformat())
+                for p in instalments
+            ],
             costs_to_date_cents=costs_to_date,
-            rate_bp=c.rate_bp,
             work_share_bp=c.work_share_bp,
             previously_allocated_cents=allocated,
         )
@@ -257,6 +264,7 @@ def record_client_payment(
             after={"person_id": c.person_id, "amount_cents": payout.amount_cents, "due_at": str(payout.due_at)},
         )
         payouts.append(payout)
+    release_deferred_fees(db, actor)
     return payment, payouts
 
 
@@ -273,7 +281,7 @@ def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_d
 
 @router.get("/payouts", response_model=list[PayoutOut])
 def list_payouts(unpaid: bool = False, db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    q = select(Payout).order_by(Payout.due_at)
+    q = select(Payout).order_by(Payout.due_at.asc().nulls_last(), Payout.id)
     if unpaid:
         q = q.where(Payout.paid_at.is_(None))
     return db.scalars(q).all()
@@ -301,6 +309,23 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Statement not found")
     if user.role == "admin":
         require_admin(user)
+    if payout.kind == "task_fee":
+        order = payout.task_order
+        pdf = task_fee_statement_pdf(
+            statement_number=payout.statement_number,
+            contributor=payout.person.full_name,
+            task_number=order.number,
+            title=order.title,
+            deliverable=order.deliverable,
+            fee_cents=payout.amount_cents,
+            accepted_on=order.accepted_on.isoformat(),
+            due_at=payout.due_at.isoformat() if payout.due_at else None,
+            paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
+            eft_reference=payout.eft_reference,
+            issued_on=payout.created_at.date(),
+        )
+        headers = {"Content-Disposition": f'inline; filename="{payout.statement_number}.pdf"'}
+        return Response(pdf, media_type="application/pdf", headers=headers)
     pdf = payout_statement_pdf(
         statement_number=payout.statement_number,
         project_name=payout.project.name,

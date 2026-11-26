@@ -524,6 +524,7 @@ def record_invoice_payment(
     invoice_id: int, body: InvoicePaymentIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)
 ):
     """Record money received against an invoice: issues a signed receipt and triggers contributor payouts."""
+    from ..terms import release_deferred_fees
     from .projects import record_client_payment
 
     inv = get_invoice(db, invoice_id)
@@ -572,6 +573,7 @@ def record_invoice_payment(
     receipt.pdf_sha256 = stored.sha256
     db.add(receipt)
     db.flush()
+    release_deferred_fees(db, admin.email)  # an invoice paid without a project is still client income
     audit(
         db,
         admin.email,

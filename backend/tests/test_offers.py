@@ -171,6 +171,7 @@ def test_jobs_endpoint_requires_token(client):
         "quotations_expired",
         "invoices_overdue",
         "payouts_due",
+        "task_reviews_overdue",
         "people_purged",
     }
 
