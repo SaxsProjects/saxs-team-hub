@@ -12,7 +12,7 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 | Offers | `GET/POST /api/offers` · `GET/PATCH /api/offers/{id}` · `POST /api/offers/{id}/pdf` · `POST /api/offers/{id}/send` · `POST /api/offers/{id}/revoke` · `GET /api/pipeline` | admin |
 | Candidate link | `GET /api/public/offers/{token}` · `GET …/{token}/pdf` · `POST …/{token}/accept` · `POST …/{token}/decline` | anyone with the link |
 | Onboarding | `GET /api/people/{id}/onboarding` · `PATCH /api/onboarding/{item}` | admin |
-| Projects & payouts | `GET/POST /api/projects` · `GET/PATCH /api/projects/{id}` · `PUT /api/projects/{id}/contributors` · `DELETE …/contributors/{person}` · `POST …/lock` · `POST …/costs` · `POST …/payments` · `GET /api/payouts` · `POST /api/payouts/{id}/paid` | admin |
+| Projects & payouts | `GET/POST /api/projects` · `GET/PATCH /api/projects/{id}` · `PUT /api/projects/{id}/contributors` · `DELETE …/contributors/{person}` · `POST …/lock` · `POST …/costs` · `POST …/payments` · `GET /api/payouts` (`?unpaid=true`, `?requested=true`) · `POST /api/payouts/{id}/paid` | admin |
 | Task Orders | `GET/POST /api/task-orders` (`?status_filter=`, `?person_id=`, `?review_overdue=true`) · `GET/PATCH /api/task-orders/{id}` (PATCH only before the contractor confirms) · `POST …/accept` (creates the fee payout) · `POST …/request-changes` · `POST …/cancel` | admin |
 | Statements | `GET /api/payouts/{id}/statement.pdf` (revenue share or task fee) | admin, or the contributor it belongs to |
 | Clients | `GET/POST /api/clients` · `GET/PATCH /api/clients/{id}` | admin |
@@ -20,7 +20,7 @@ Interactive API docs are at `/docs` when `ENVIRONMENT` is not `production`.
 | Invoices | `GET/POST /api/invoices` (from an accepted quotation, optionally `portion_percent` for a deposit) · `GET/PATCH/DELETE /api/invoices/{id}` (drafts only) · `POST …/issue` · `POST …/payments` (issues a receipt, triggers payouts) · `POST …/credit-notes` · `GET …/receipts` · `GET …/credit-notes` · `GET …/pdf` | admin |
 | Receipts & credit notes | `GET /api/receipts/{id}/pdf` · `GET /api/credit-notes/{id}/pdf` | admin |
 | Finance overview | `GET /api/finance/readiness` (what is still missing, never the values) · `GET /api/finance/summary` | admin |
-| Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `GET /api/me/rates` · `GET /api/me/task-orders` · `POST /api/me/task-orders/{id}/confirm` · `POST …/decline` · `POST …/submit` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
+| Team member | `GET /api/me/profile` · `GET/PATCH /api/me/onboarding` · `PUT/GET /api/me/sensitive` · `GET /api/me/projects` · `GET /api/me/payouts` · `POST /api/me/payouts/{id}/request-payment` (once due; reminder allowed after 3 days; emails the founder) · `GET /api/me/rates` · `GET /api/me/task-orders` · `POST /api/me/task-orders/{id}/confirm` · `POST …/decline` · `POST …/submit` · `GET /api/me/documents` · `GET /api/documents/{id}` | the member, own data only |
 | System | `GET /api/health` · `GET /api/audit` (admin) · `POST /api/jobs/daily` (`X-Jobs-Token`) | |
 
 ## Pages for email links

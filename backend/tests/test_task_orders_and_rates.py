@@ -388,3 +388,38 @@ def test_backdated_first_payment_moves_deferred_due_dates(client, admin, team):
     # task (accepted 10 days ago) was accepted after it, so the fee is due 7 days after acceptance.
     pay(client, admin, project, 100_000, (today - timedelta(days=20)).isoformat(), "EFT-0")
     assert client.get("/api/me/payouts", headers=member).json()[0]["due_at"] == (today - timedelta(days=3)).isoformat()
+
+
+def test_request_payment(client, admin, team):
+    from app import emailer
+    from app.models import Payout
+
+    person, member = team
+    oid = create_order(client, admin, person["id"])["id"]
+    client.post(f"/api/me/task-orders/{oid}/confirm", headers=member)
+    client.post(f"/api/me/task-orders/{oid}/submit", headers=member, json={"note": "done"})
+    payout = client.post(f"/api/task-orders/{oid}/accept", headers=admin, json={}).json()["payout"]
+    url = f"/api/me/payouts/{payout['id']}/request-payment"
+
+    r = client.post(url, headers=member)
+    assert r.status_code == 409 and "Not due yet" in r.json()["detail"]  # due in 7 days
+
+    with SessionLocal() as db:
+        db.get(Payout, payout["id"]).due_at = today_local()
+        db.commit()
+    r = client.post(url, headers=member)
+    assert r.status_code == 200 and r.json()["payment_requested_at"]
+    assert any("Payment request" in m.subject for m in emailer.outbox)
+    assert client.post(url, headers=member).status_code == 409  # one request; reminders after 3 days
+    [asked] = client.get("/api/payouts?requested=true", headers=admin).json()
+    assert asked["id"] == payout["id"]
+
+    # Someone else's payout is invisible; a paid one cannot be requested.
+    other = other_person(client, admin)
+    pid = client.post("/api/projects", headers=admin, json={"name": "Site", "client_name": "Client"}).json()["id"]
+    client.put(f"/api/projects/{pid}/contributors", headers=admin, json={"person_id": other["id"], "work_share_bp": 10_000})
+    [theirs] = pay(client, admin, pid, 100_000, today_local().isoformat(), "EFT-1")
+    assert client.post(f"/api/me/payouts/{theirs['id']}/request-payment", headers=member).status_code == 404
+    client.post(f"/api/payouts/{payout['id']}/paid", headers=admin, json={"eft_reference": "CAP-9"})
+    assert client.post(url, headers=member).status_code == 409
+    assert client.get("/api/payouts?requested=true", headers=admin).json() == []
