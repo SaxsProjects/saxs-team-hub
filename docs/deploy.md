@@ -22,7 +22,8 @@ Data location: Neon `aws-eu-central-1` (Frankfurt) and Render Frankfurt. Persona
    `python -m scripts.neon_setup <owner-file> <render-env-file>`
    This creates the database, the two logins and the secrets.
 3. **Render:** create the web service from `render.yaml` and set the generated values (`DATABASE_URL`, `MIGRATION_DATABASE_URL`, `SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, `JOBS_TOKEN`) plus `FRONTEND_URL`/`CORS_ORIGINS` (the service's own URL until the frontend exists).
-4. **Founder, in the Render dashboard:** `SMTP_USER`, `SMTP_PASS`, `ADMIN_NOTIFY_EMAIL`, `SIGNATORY_NAME`, the Secret File `signature.png`, and the five `COMPANY_BANK_*` values.
+4. **Founder, in the Render dashboard:** `RESEND_API_KEY` (a Resend key with *sending access* only, for the verified domain saxsprojects.co.za), `SMTP_FROM` = `admin@saxsprojects.co.za`, `ADMIN_NOTIFY_EMAIL`, `SIGNATORY_NAME`, `SIGNATURE_IMAGE_BASE64` (the signature PNG as base64; Render's Secret Files are meant for text) and the five `COMPANY_BANK_*` values.
+   Render's free plan blocks outgoing SMTP ports (25, 465, 587), so email is sent over HTTPS through Resend (free: 3,000 a month, 100 a day). Resend's DNS records (DKIM `resend._domainkey`, and MX + SPF on the `send` subdomain) live in Vercel DNS next to Zoho's; they do not affect Zoho mail. Zoho SMTP (`SMTP_USER`, `SMTP_PASS`) is only used when `RESEND_API_KEY` is empty. Test with `python -m app.cli check-email`.
 5. **Deploy.** Start-up runs the migrations as `teamhub_migrator`.
 6. **Lock the audit log for the app login:**
    `python -m scripts.neon_setup <owner-file> <render-env-file> --after-migrate`

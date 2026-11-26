@@ -43,6 +43,14 @@ services:
         sync: false
       - key: ADMIN_NOTIFY_EMAIL
         sync: false
+      # Email goes out over HTTPS through Resend: Render's free plan blocks outgoing SMTP ports.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SMTP_FROM
+        value: admin@saxsprojects.co.za
+      - key: SMTP_FROM_NAME
+        value: SaxsProjects Team Hub
+      # SMTP (Zoho) is only used when RESEND_API_KEY is empty, e.g. on a paid Render plan.
       - key: SMTP_HOST
         value: smtppro.zoho.com
       - key: SMTP_PORT

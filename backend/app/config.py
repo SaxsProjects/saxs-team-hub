@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     # Who gets notified about offer activity.
     admin_notify_email: str = ""
 
-    # Outgoing email (Zoho Mail: smtppro.zoho.com / smtp.zoho.com, port 465, app-specific password).
+    # Outgoing email. Resend (HTTPS API) is used when RESEND_API_KEY is set; hosts such as Render's free
+    # plan block outgoing SMTP ports, but not HTTPS. Otherwise SMTP (Zoho Mail: smtppro.zoho.com /
+    # smtp.zoho.com, port 465, app-specific password).
+    resend_api_key: str = ""
+    resend_api_url: str = "https://api.resend.com/emails"
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_user: str = ""
@@ -125,6 +129,20 @@ class Settings(BaseSettings):
         return bool(self.smtp_host and self.smtp_user and self.smtp_pass)
 
     @property
+    def resend_configured(self) -> bool:
+        return bool(self.resend_api_key.strip())
+
+    @property
+    def email_sender(self) -> str:
+        return (self.smtp_from or self.smtp_user).strip()
+
+    @property
+    def email_configured(self) -> bool:
+        if self.resend_configured:
+            return "@" in self.email_sender
+        return self.smtp_configured
+
+    @property
     def vat_registered(self) -> bool:
         return bool(self.company_vat_number.strip())
 
@@ -159,8 +177,11 @@ class Settings(BaseSettings):
                 and not any(f"sslmode={mode}" in url for mode in ("require", "verify-ca", "verify-full"))
             ):
                 problems.append(f"{name} must use an encrypted connection (sslmode=require or stricter)")
-        if not self.smtp_configured:
-            problems.append("SMTP_HOST, SMTP_USER and SMTP_PASS must be set so notifications are delivered")
+        if not self.email_configured:
+            problems.append(
+                "Email must be configured so notifications are delivered: RESEND_API_KEY with SMTP_FROM, "
+                "or SMTP_HOST, SMTP_USER and SMTP_PASS"
+            )
         if not self.admin_notify_email:
             problems.append("ADMIN_NOTIFY_EMAIL must be set")
         if not self.signature_configured or not self.signatory_name.strip():
