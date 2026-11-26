@@ -44,7 +44,9 @@ public = APIRouter(prefix="/api/public/offers", tags=["public offers"], dependen
 PRIVACY_NOTICE = (
     "We use your name, contact details and your response to this offer only to manage your engagement with "
     "{company}, as required by the Protection of Personal Information Act (POPIA). If you decline, we delete "
-    "your details after {days} days. You may ask us to access, correct or delete your information at any time."
+    "your details after {days} days. Your information is stored encrypted with our service providers in "
+    "Frankfurt, Germany (European Union), whose data-protection law is at least as strong as POPIA (section 72). "
+    "You may ask us to access, correct or delete your information at any time."
 )
 
 
