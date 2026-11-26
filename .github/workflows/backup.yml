@@ -49,7 +49,7 @@ jobs:
           name="teamhub-$(date -u +%Y-%m-%d-%H%M).bak"
           python -m scripts.backup backup "$RUNNER_TEMP/$name" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "BACKUP_FILE=$RUNNER_TEMP/$name" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: env.HAS_SECRETS == 'true'
         with:
           name: database-backup-${{ github.run_number }}
