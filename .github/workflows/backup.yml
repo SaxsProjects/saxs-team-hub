@@ -32,7 +32,7 @@ jobs:
         run: echo "::notice::Set TEAM_HUB_BACKUP_DATABASE_URL and TEAM_HUB_BACKUP_KEY to enable backups"
       - uses: actions/checkout@v7
         if: env.HAS_SECRETS == 'true'
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: env.HAS_SECRETS == 'true'
         with:
           python-version: "3.13"
