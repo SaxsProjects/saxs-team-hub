@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { API_URL } from "../api/client";
+import { API_URL, signOutPending } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { AuthLayout } from "../components/AuthLayout";
 import { greeting } from "../lib/format";
@@ -86,6 +86,11 @@ export function SignIn() {
 
   return (
     <AuthLayout title={`${greeting()}.`} subtitle="Sign in to your workspace.">
+      {signOutPending() && (
+        <p className="form-note" role="status">
+          You are signed out here. The server couldn't be reached to confirm it; reload this page once you're online.
+        </p>
+      )}
       <form className="auth-form" onSubmit={submit} noValidate>
         <div className="field">
           <label htmlFor="email">Email address</label>

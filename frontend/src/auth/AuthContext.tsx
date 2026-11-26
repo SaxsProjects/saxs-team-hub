@@ -1,6 +1,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, ApiError, clearSession, hasSession, onSessionChange, post, sessionExpiresAt, setSession } from "../api/client";
+import {
+  api,
+  ApiError,
+  hasSession,
+  IDLE_LIMIT_MS,
+  idleFor,
+  noteActivity,
+  onSessionChange,
+  post,
+  renew,
+  setSession,
+  signOutHere,
+  signOutPending,
+} from "../api/client";
 import type { Me, TokenOut } from "../api/types";
 
 export type SignInResult = "ok" | "totp_required";
@@ -13,10 +26,24 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | null>(null);
+const ACTIVITY_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel", "scroll", "touchstart"] as const;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [signedIn, setSignedIn] = useState(hasSession());
+  // On first load, try the renewal cookie so a reload or new tab keeps the person signed in.
+  const [resuming, setResuming] = useState(!hasSession());
+
+  useEffect(() => {
+    if (!resuming) return;
+    let cancelled = false;
+    // A sign-out that didn't reach the server is retried first, and the session is not resumed.
+    const start = signOutPending() ? signOutHere() : renew();
+    void start.finally(() => !cancelled && setResuming(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [resuming]);
 
   useEffect(
     () =>
@@ -28,12 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [queryClient],
   );
 
-  // Sign out on the dot when the 60-minute session ends, instead of failing on the next click.
+  // Track activity; after 30 minutes without any, sign out on this device.
   useEffect(() => {
-    const expiresAt = sessionExpiresAt();
-    if (!signedIn || !expiresAt) return;
-    const timer = window.setTimeout(clearSession, Math.max(0, expiresAt - Date.now()));
-    return () => window.clearTimeout(timer);
+    if (!signedIn) return;
+    noteActivity();
+    ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, noteActivity, { passive: true, capture: true }));
+    const check = window.setInterval(() => {
+      if (idleFor() >= IDLE_LIMIT_MS) void signOutHere();
+    }, 30_000);
+    return () => {
+      ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, noteActivity, { capture: true }));
+      window.clearInterval(check);
+    };
   }, [signedIn]);
 
   const meQuery = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/api/auth/me"), enabled: signedIn, staleTime: 60_000 });
@@ -49,14 +82,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signOut = useCallback(() => void signOutHere(), []);
+
   const value = useMemo<AuthState>(
     () => ({
       me: signedIn ? (meQuery.data ?? null) : null,
-      loading: signedIn && meQuery.isPending,
+      loading: resuming || (signedIn && meQuery.isPending),
       signIn,
-      signOut: clearSession,
+      signOut,
     }),
-    [signedIn, meQuery.data, meQuery.isPending, signIn],
+    [signedIn, resuming, meQuery.data, meQuery.isPending, signIn, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -62,6 +62,7 @@ describe("sign in", () => {
   it("asks for the two-factor code, then signs in with it", async () => {
     const user = userEvent.setup();
     const calls = renderApp((url, init) => {
+      if (url.endsWith("/api/auth/refresh")) return json(401, { detail: "Your sign-in has ended." }); // no cookie yet
       if (url.endsWith("/api/auth/login")) {
         const body = JSON.parse(String(init.body));
         if (!body.totp_code) return json(401, { detail: "totp_required" });
@@ -74,7 +75,7 @@ describe("sign in", () => {
       return json(200, []); // dashboard widgets: empty is fine for this test
     });
 
-    await user.type(screen.getByLabelText("Email address"), "admin@saxsprojects.co.za");
+    await user.type(await screen.findByLabelText("Email address"), "admin@saxsprojects.co.za");
     await user.type(screen.getByLabelText("Password"), "a-test-password");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -95,12 +96,15 @@ describe("sign in", () => {
     expect(calls.every((c) => c.url.startsWith(API_URL))).toBe(true);
     const meCall = calls.find((c) => c.url.endsWith("/api/auth/me"))!;
     expect(new Headers(meCall.init.headers).get("Authorization")).toBe("Bearer tok");
-    expect(meCall.init.credentials).toBe("omit");
+    expect(meCall.init.credentials).toBe("omit"); // only the sign-in endpoints carry the cookie
+    expect(calls.find((c) => c.url.endsWith("/api/auth/login"))!.init.credentials).toBe("include");
+    expect(JSON.stringify({ ...sessionStorage, ...localStorage })).not.toContain("tok"); // the pass is never stored
   });
 
   it("shows the server's message on a wrong password and stays signed out", async () => {
     const user = userEvent.setup();
     renderApp(() => json(401, { detail: "Wrong email or password" }));
+    await screen.findByLabelText("Email address");
     await user.type(screen.getByLabelText("Email address"), "x@saxsprojects.co.za");
     await user.type(screen.getByLabelText("Password"), "nope");
     await user.click(screen.getByRole("button", { name: "Sign in" }));

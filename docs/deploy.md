@@ -43,3 +43,19 @@ The cloud backup needs two repository secrets, `TEAM_HUB_BACKUP_DATABASE_URL` an
 
 Manual backup or check: `python -m scripts.backup backup FILE` / `verify FILE`.
 To restore: create an empty database, `alembic upgrade` it to the revision `verify` shows, then `python -m scripts.backup restore FILE`. CI rehearses this on PostgreSQL on every change.
+
+## Web app sign-ins
+
+The web app (`frontend/`, on Vercel at `hub.saxsprojects.co.za`) keeps people signed in while they work:
+
+- A 15-minute access pass (`ACCESS_TOKEN_MINUTES`) is held in memory only.
+- An HttpOnly, Secure, SameSite=Strict renewal cookie (`__Host-teamhub_session`) is swapped for a new one on every renewal; reusing an old one ends the session (`app/sessions.py`).
+- Sign-ins end after 30 minutes without activity (`SESSION_IDLE_MINUTES`), after 12 hours for team members (`SESSION_MAX_HOURS`) or 8 hours for the founder (`ADMIN_SESSION_MAX_HOURS`), on sign-out, and on any password change or reset.
+
+The cookie only reaches the API when the app and API share the company domain, so the API must be served at
+**`api.saxsprojects.co.za`** (a Render custom domain, free) and the app at **`hub.saxsprojects.co.za`**:
+
+1. Render → service → Settings → Custom Domains → add `api.saxsprojects.co.za`.
+2. Vercel DNS for saxsprojects.co.za → CNAME `api` → the `onrender.com` host Render shows.
+3. Render environment: `CORS_ORIGINS=https://hub.saxsprojects.co.za` and `FRONTEND_URL=https://api.saxsprojects.co.za`.
+4. Vercel project with root directory `frontend/`, domain `hub.saxsprojects.co.za`.

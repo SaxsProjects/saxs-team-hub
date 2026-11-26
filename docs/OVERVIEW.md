@@ -65,7 +65,7 @@ Recruit ─► Offer link ─► Accept (e-signature) ─► Account + onboardin
 
 | Risk | Protection |
 |---|---|
-| Stolen password | Strong hashing (argon2), 60-minute sessions, sign-out everywhere on password change, login rate limits, two-factor for the founder |
+| Stolen password | Strong hashing (argon2), 15-minute access passes renewed only while active (signed out after 30 idle minutes, 8–12 hours at most, copied renewal cookies detected), sign-out everywhere on password change, login rate limits, two-factor for the founder |
 | A bug or attacker rewriting history | The audit log is append-only: the database itself refuses edits, deletes and wipes, for every login. Proven automatically on every code change and on the live database |
 | A leaked app password | The app's database login can only read and write rows — it cannot change or drop tables, wipe them, or touch the audit history. Migrations use a separate login; backups use a read-only login |
 | Personal data exposure (POPIA) | Banking and ID details encrypted; shown only when the founder deliberately reveals them (and that is logged). Declined candidates deleted after a year. Data stored in Frankfurt (EU), stated in the privacy notice (POPIA section 72) |

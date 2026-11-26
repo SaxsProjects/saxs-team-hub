@@ -1,7 +1,7 @@
 import threading
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from ..deps import (
     login_failures,
     login_limiter,
     rate_key_ip,
+    refresh_limiter,
     require_admin_any,
     reset_requests,
     totp_failures,
@@ -33,7 +34,6 @@ from ..schemas import (
 )
 from ..security import (
     burn_password_check,
-    create_access_token,
     decrypt_text,
     encrypt_text,
     hash_password,
@@ -44,6 +44,7 @@ from ..security import (
     verify_totp,
 )
 from ..services import audit, issue_action_token, link, revoke_sessions
+from ..sessions import end_session, renew_session, start_session
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -72,7 +73,7 @@ def _send_totp_alert(to: str) -> None:
 
 
 @router.post("/login", response_model=TokenOut, dependencies=[Depends(login_limiter)])
-def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
     """Sign in.
 
     Failure limits that cannot be dodged by changing IP address:
@@ -146,8 +147,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     login_failures.reset(pair)
     user.last_login_at = datetime.now(UTC)
     audit(db, user.email, "auth.login", "user", user.id)
+    token, expires_in = start_session(db, user, request, response)
     db.commit()
-    token, expires_in = create_access_token(user.id, user.role)
     return TokenOut(access_token=token, expires_in=expires_in)
 
 
@@ -211,16 +212,37 @@ def forgot_password(body: ForgotPasswordIn, background: BackgroundTasks, db: Ses
 
 
 @router.post("/change-password", response_model=TokenOut)
-def change_password(body: ChangePasswordIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Change password. Signs out every other session and returns a fresh token for this one."""
+def change_password(
+    body: ChangePasswordIn,
+    request: Request,
+    response: Response,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Change password. Signs out every other session and starts a fresh one for this browser."""
     if not verify_password(user.password_hash, body.current_password):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is wrong")
     user.password_hash = hash_password(body.new_password)
     revoke_sessions(user)
     audit(db, user.email, "auth.change_password", "user", user.id)
+    token, expires_in = start_session(db, user, request, response)
     db.commit()
-    token, expires_in = create_access_token(user.id, user.role)
     return TokenOut(access_token=token, expires_in=expires_in)
+
+
+@router.post("/refresh", response_model=TokenOut, dependencies=[Depends(refresh_limiter)])
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Renew the access pass using the HttpOnly sign-in cookie. 401 when the sign-in has ended."""
+    token, expires_in = renew_session(db, request, response)
+    return TokenOut(access_token=token, expires_in=expires_in)
+
+
+@router.post("/logout", status_code=204)
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Sign out this browser."""
+    response = Response(status_code=204)
+    end_session(db, request, response)
+    return response
 
 
 @router.get("/me", response_model=MeOut)
