@@ -30,7 +30,7 @@ jobs:
         if: env.HAS_SECRETS != 'true'
         working-directory: .
         run: echo "::notice::Set TEAM_HUB_BACKUP_DATABASE_URL and TEAM_HUB_BACKUP_KEY to enable backups"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAS_SECRETS == 'true'
       - uses: actions/setup-python@v5
         if: env.HAS_SECRETS == 'true'
