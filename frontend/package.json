@@ -1,7 +1,7 @@
 {
   "name": "saxs-team-hub-web",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@testing-library/dom": "10.4.2",
-    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/jest-dom": "8.0.0",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.13",
     "@types/node": "26.6.6",
@@ -29,8 +29,8 @@
     "@vitejs/plugin-react": "5.2.0",
     "jsdom": "31.0.1",
     "typescript": "5.9.3",
-    "vite": "7.3.8",
-    "vitest": "4.1.12"
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
   },
   "engines": {
     "node": ">=20.19"
