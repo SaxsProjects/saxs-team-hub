@@ -71,12 +71,22 @@ def role_url(owner_url: str, role: str, password: str) -> str:
 
 def ensure_role(cur, role: str, password: str, *, limit: int, settings: dict[str, str]) -> None:
     cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
-    verb = "ALTER" if cur.fetchone() else "CREATE"
+    exists = cur.fetchone()
+    # The safety attributes are set at creation. Re-stating them on ALTER fails on Neon, where only a
+    # superuser may mention SUPERUSER/REPLICATION, so a re-run only refreshes the password and limit
+    # and then checks the attributes are still safe.
+    attrs = "" if exists else " NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"
     cur.execute(
-        sql.SQL("{} ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT {}").format(
-            sql.SQL(verb), sql.Identifier(role), sql.Literal(password), sql.Literal(limit)
+        sql.SQL("{} ROLE {} LOGIN PASSWORD {}" + attrs + " CONNECTION LIMIT {}").format(
+            sql.SQL("ALTER" if exists else "CREATE"), sql.Identifier(role), sql.Literal(password), sql.Literal(limit)
         )
     )
+    cur.execute(
+        "SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = %s",
+        (role,),
+    )
+    if cur.fetchone()[0]:
+        raise SystemExit(f"{role} has a privileged attribute; remove it in the Neon console before continuing")
     for name, value in settings.items():
         cur.execute(sql.SQL("ALTER ROLE {} SET {} = {}").format(sql.Identifier(role), sql.Identifier(name), sql.Literal(value)))
 
