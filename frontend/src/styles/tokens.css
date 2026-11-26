@@ -1,0 +1,40 @@
+/* Design tokens taken from the founder's Figma file. Only the two brand colours are swapped
+   for the company colours: blue #1A5FE0 -> #0066FF (hover #0052CC), navy #15233F -> #101E35. */
+:root {
+  --brand: #0066ff;
+  --brand-hover: #0052cc;
+  --brand-tint: #edf3ff;
+  --brand-tint-strong: #dce8ff;
+  --navy: #101e35;
+  --nav-active: #28416a;
+  --nav-text: #c2cbdb;
+  --nav-icon: #a7b5ce;
+  --nav-label: #96a6c2;
+  --nav-divider: #30405a;
+  --accent-green: #a6daa8;
+  --ink: #101e35;
+  --muted: #687489;
+  --border: #e7eaf0;
+  --surface: #ffffff;
+  --canvas: #f6f7f9;
+  --table-head: #fafbfc;
+  --chip: #f1f3f6;
+  --success: #27674e;
+  --success-bar: #488061;
+  --success-bar-off: #c7ddca;
+  --success-tint: #e6f2e8;
+  --success-chip: #eaf4eb;
+  --warning-ink: #976123;
+  --warning-tint: #fff2e1;
+  --warning-badge: #efcc8e;
+  --activity-amber: #ba8045;
+  --danger: #b42318;
+  --danger-tint: #fdecea;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --sidebar: 232px;
+  --topbar: 80px;
+  --font: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
