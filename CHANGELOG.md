@@ -4,6 +4,14 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.2.0] - 2026-11-26
+
+### Added
+- Android app (`mobile/`, package `za.co.saxsprojects.teamhub`): opens the live Team Hub at
+  hub.saxsprojects.co.za, with the SaxsProjects icon and splash screen and an offline page.
+  Signed release APK attached to each GitHub Release (`saxs-team-hub-android-X.Y.Z.apk`).
+- The web app is live at https://hub.saxsprojects.co.za.
+
 ## [1.1.0] - 2026-11-26
 
 ### Added

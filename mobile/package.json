@@ -1,0 +1,17 @@
+{
+  "name": "saxs-team-hub-android",
+  "private": true,
+  "version": "1.2.0",
+  "description": "SaxsProjects Team Hub Android app: opens the live Team Hub (hub.saxsprojects.co.za).",
+  "scripts": {
+    "sync": "cap sync android",
+    "apk": "cap sync android && cd android && gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.3",
+    "@capacitor/core": "8.6.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.3"
+  }
+}

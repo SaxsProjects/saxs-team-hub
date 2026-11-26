@@ -27,13 +27,40 @@ jobs:
           npm ci
           npm test
           npm run build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the signed Android app
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p dist
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::warning::Android signing secrets not set; the APK is not built here"
+            exit 0
+          fi
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/teamhub-release.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
+          cd mobile
+          npm ci
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "../../dist/saxs-team-hub-android-${GITHUB_REF_NAME#v}.apk"
+          rm -f "$ANDROID_KEYSTORE_PATH"
       - name: Package
         run: |
           v="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           (cd frontend/dist && zip -qr "../../dist/saxs-team-hub-web-$v.zip" .)
           git archive --format=zip --prefix="saxs-team-hub-api-$v/" -o "dist/saxs-team-hub-api-$v.zip" HEAD backend render.yaml VERSION CHANGELOG.md
-          (cd dist && sha256sum ./*.zip > SHA256SUMS.txt)
+          (cd dist && sha256sum ./*.zip ./*.apk 2>/dev/null > SHA256SUMS.txt || sha256sum ./*.zip > SHA256SUMS.txt)
       - name: Release notes from the changelog
         run: |
           v="${GITHUB_REF_NAME#v}"
