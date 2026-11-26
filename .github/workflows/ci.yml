@@ -64,6 +64,15 @@ jobs:
       - run: pip-audit -r requirements.txt
 
 
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck .github/scripts/*.sh
+      - run: bash .github/scripts/check-versions.sh
+      - name: The changelog has an entry for this version
+        run: grep -q "^## \[$(cat VERSION)\]" CHANGELOG.md
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -9,6 +9,9 @@ import { describeAudit } from "../lib/activity";
 import { clock, firstName, shortDate } from "../lib/format";
 import { Avatar } from "./Avatar";
 import { FOUNDER_NAV, MEMBER_NAV, SETTINGS_ITEM, type NavItem } from "./nav";
+import markLight from "../assets/logo-mark-light.png";
+import wordLight from "../assets/logo-wordmark-light.png";
+import { APP_VERSION } from "../lib/version";
 import "./AppShell.css";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -33,7 +36,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
       <aside className={`sidebar${drawerOpen ? " open" : ""}`} aria-label="Main navigation">
         <div className="sidebar-brand">
-          <span className="sidebar-wordmark">saxsprojects</span>
+          <span className="sidebar-logo">
+            <img src={markLight} alt="" className="sidebar-mark" />
+            <img src={wordLight} alt="SaxsProjects" className="sidebar-word" />
+          </span>
           <span className="sidebar-tag">TEAM HUB</span>
           <span className="sidebar-accent" aria-hidden="true" />
           <button className="sidebar-close" onClick={() => setDrawerOpen(false)} aria-label="Close menu">
@@ -50,6 +56,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <SideLink item={SETTINGS_ITEM} />
           <hr className="sidebar-divider" />
           <p className="sidebar-role">{isAdmin ? "FOUNDER · ADMIN" : "TEAM MEMBER"}</p>
+          <p className="sidebar-version">Team Hub v{APP_VERSION}</p>
         </div>
       </aside>
       {drawerOpen && <div className="scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}

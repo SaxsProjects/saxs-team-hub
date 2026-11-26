@@ -14,6 +14,7 @@ from .db import get_db
 from .jobs import run_daily
 from .pdf import load_signature
 from .routers import auth, avatars, finance, me, offers, overview, pages, people, projects, task_orders
+from .version import __version__
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -26,7 +27,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=f"{settings.company_name} Team Hub API",
-        version="1.0.0",
+        version=__version__,
         docs_url="/docs" if settings.api_docs_enabled else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.api_docs_enabled else None,
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
             database = False
         body = {
             "ok": database,
+            "version": __version__,
             "database": database,
             "email": settings.email_configured,
             "signature": settings.signature_configured,

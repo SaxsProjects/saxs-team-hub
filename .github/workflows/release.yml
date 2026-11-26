@@ -1,0 +1,45 @@
+# Publish a release when a version tag (v1.2.3) is pushed: checks, builds the packages and attaches
+# them to a GitHub Release with that version's changelog notes.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the product version
+        run: bash .github/scripts/check-versions.sh "$GITHUB_REF_NAME"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the web app
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Package
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          (cd frontend/dist && zip -qr "../../dist/saxs-team-hub-web-$v.zip" .)
+          git archive --format=zip --prefix="saxs-team-hub-api-$v/" -o "dist/saxs-team-hub-api-$v.zip" HEAD backend render.yaml VERSION CHANGELOG.md
+          (cd dist && sha256sum ./*.zip > SHA256SUMS.txt)
+      - name: Release notes from the changelog
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v h="## [$v]" 'index($0, h) == 1 {on=1; next} index($0, "## [") == 1 {on=0} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error::CHANGELOG.md has no section for $v"; exit 1; }
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Team Hub $GITHUB_REF_NAME" --notes-file notes.md --verify-tag

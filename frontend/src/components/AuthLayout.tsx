@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import { LockKeyhole } from "lucide-react";
+import mark from "../assets/logo-mark.png";
+import word from "../assets/logo-wordmark.png";
+import { APP_VERSION } from "../lib/version";
 import "./AuthLayout.css";
 
 /** The centred-card layout of the Sign in / Two-factor / Set password screens. */
@@ -7,7 +10,10 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
   return (
     <div className="auth-page">
       <header className="auth-header">
-        <span className="wordmark">saxsprojects</span>
+        <span className="auth-logo">
+          <img src={mark} alt="" className="auth-mark" />
+          <img src={word} alt="SaxsProjects" className="auth-word" />
+        </span>
         <span className="auth-header-tag">TEAM HUB</span>
       </header>
       <main className="auth-main" id="main">
@@ -19,7 +25,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
           <p className="auth-subtitle">{subtitle}</p>
           {children}
         </section>
-        {footer ?? <p className="auth-footnote">SaxsProjects Team Hub</p>}
+        {footer ?? <p className="auth-footnote">SaxsProjects (Pty) Ltd · Team Hub v{APP_VERSION}</p>}
       </main>
     </div>
   );
