@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
         body = {
             "ok": database,
             "database": database,
-            "email": settings.smtp_configured,
+            "email": settings.email_configured,
             "signature": settings.signature_configured,
         }
         # 503 when the database is unreachable, so the host's health check notices and restarts.

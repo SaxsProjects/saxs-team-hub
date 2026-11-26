@@ -1,15 +1,21 @@
-"""Outgoing email over SMTP (Zoho Mail by default).
+"""Outgoing email: Resend's HTTPS API when RESEND_API_KEY is set, otherwise SMTP (Zoho Mail).
 
-Zoho only accepts mail whose From address is the mailbox you log in with (or a
+Render's free plan blocks outgoing SMTP ports, so production sends over HTTPS (port 443) through
+Resend, from an address on the company domain verified there (SMTP_FROM, e.g. admin@).
+Over SMTP, Zoho only accepts mail whose From address is the mailbox you log in with (or a
 verified alias), so From defaults to SMTP_USER.
 
-Without SMTP settings (development/tests) messages are kept in `outbox` and
+Without email settings (development/tests) messages are kept in `outbox` and
 logged instead of sent.
 """
 
+import base64
+import json
 import logging
 import smtplib
 import ssl
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
@@ -35,10 +41,10 @@ outbox: list[OutgoingEmail] = []
 def _build(msg: OutgoingEmail) -> EmailMessage:
     settings = get_settings()
     em = EmailMessage()
-    sender = settings.smtp_from or settings.smtp_user
+    sender = settings.email_sender
     em["From"] = formataddr((settings.smtp_from_name, sender))
     em["To"] = msg.to
-    em["Subject"] = msg.subject.replace("\r", " ").replace("\n", " ")
+    em["Subject"] = _clean_header(msg.subject)
     em["Message-ID"] = make_msgid(domain=sender.split("@")[-1] if "@" in sender else None)
     if msg.reply_to:
         em["Reply-To"] = msg.reply_to
@@ -49,12 +55,59 @@ def _build(msg: OutgoingEmail) -> EmailMessage:
     return em
 
 
+def _clean_header(value: str) -> str:
+    return value.replace("\r", " ").replace("\n", " ")
+
+
+def _resend_payload(msg: OutgoingEmail) -> dict:
+    settings = get_settings()
+    payload = {
+        "from": formataddr((settings.smtp_from_name, settings.email_sender)),
+        "to": [msg.to],
+        "subject": _clean_header(msg.subject),
+        "text": msg.text,
+    }
+    if msg.reply_to:
+        payload["reply_to"] = msg.reply_to
+    if msg.attachments:
+        payload["attachments"] = [
+            {"filename": filename, "content": base64.b64encode(data).decode("ascii"), "content_type": content_type}
+            for filename, data, content_type in msg.attachments
+        ]
+    return payload
+
+
+def _send_resend(msg: OutgoingEmail) -> bool:
+    settings = get_settings()
+    request = urllib.request.Request(  # noqa: S310 - fixed https URL from settings
+        settings.resend_api_url,
+        data=json.dumps(_resend_payload(msg)).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key.strip()}",
+            "Content-Type": "application/json",
+            "User-Agent": "saxs-team-hub/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
+            return 200 <= response.status < 300
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(300).decode("utf-8", "replace")
+        log.error("Email to %s refused by Resend (HTTP %s): %s", msg.to, exc.code, detail)
+    except (urllib.error.URLError, OSError) as exc:
+        log.error("Email to %s failed: %s", msg.to, exc)
+    return False
+
+
 def send_email(msg: OutgoingEmail) -> bool:
     """Send one email. Returns False (and logs) on failure instead of raising."""
     settings = get_settings()
+    if settings.resend_configured:
+        return _send_resend(msg)
     if not settings.smtp_configured:
         outbox.append(msg)
-        log.info("Email not sent (SMTP not configured): to=%s subject=%s", msg.to, msg.subject)
+        log.info("Email not sent (email not configured): to=%s subject=%s", msg.to, msg.subject)
         return True
     try:
         context = ssl.create_default_context()

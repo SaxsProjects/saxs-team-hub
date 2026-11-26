@@ -21,11 +21,11 @@ The Team Hub is SaxsProjects' private back office for its contractor team. It **
 
 | Part | State |
 |---|---|
-| Offers, pipeline, onboarding, projects, payouts, Task Orders, rate history, finance documents | Built and tested (105 automated tests) |
+| Offers, pipeline, onboarding, projects, payouts, Task Orders, rate history, finance documents | Built and tested (110 automated tests) |
 | Dashboard and team overview data, payment list, Request payment | Built |
 | Security hardening, encrypted backups, restore drill | Built; backups scheduled |
 | Database live and locked down | Done |
-| Server live | **Waiting** for the founder to add `SMTP_PASS`, `COMPANY_BANK_ACCOUNT_NUMBER` and `signature.png` in Render |
+| Server live | Live since 26 Nov 2026 (health, database guards and admin two-factor verified). Email moves to Resend over HTTPS because Render's free plan blocks SMTP |
 | GitHub secrets for daily reminders and cloud backups | **Waiting** for the founder (values in `.saxs-team-hub\github-secrets.env`) |
 | Screens (frontend) | Not started, on hold |
 
@@ -82,7 +82,7 @@ Recruit ─► Offer link ─► Accept (e-signature) ─► Account + onboardin
 | Daily jobs (GitHub Actions → `POST /api/jobs/daily`) | Every morning | Expires overdue offers, emails due payouts and overdue Task Order reviews, expires old quotations, emails overdue invoices, applies POPIA deletion |
 | Cloud backup (`.github/workflows/backup.yml`) | Sundays 02:30 | Encrypted backup kept 90 days as a private GitHub artifact |
 | Laptop backup (Task Scheduler: "SaxsProjects Team Hub backup") | Sundays 10:00, or next time the laptop is on | Encrypted backup in `.saxs-team-hub\backups`, log in `backup.log` |
-| Automated checks (CI) | Every code change | Lint, 105 tests, migrations on PostgreSQL, audit-log protection proof, backup/restore drill, dependency vulnerability scan |
+| Automated checks (CI) | Every code change | Lint, 110 tests, migrations on PostgreSQL, audit-log protection proof, backup/restore drill, dependency vulnerability scan |
 
 ## 9. Founder's everyday tasks (API today, screens later)
 
@@ -119,7 +119,7 @@ backend/
     terms.py         agreement date rules: rate_at, First Client Payment, task-fee due dates
     numbering.py     SP-* document numbers (row-locked counter per year)
     pdf.py           statements, invoices, acceptance records; signature loading
-    emailer.py       SMTP + notify_admin; in tests mails go to emailer.outbox
+    emailer.py       Resend (HTTPS) or SMTP + notify_admin; in tests mails go to emailer.outbox
     jobs.py          daily jobs
     routers/         auth, people, offers, pages (public HTML), projects, task_orders, finance, me, overview
   alembic/versions/  migrations (batch mode; Postgres-only bits guarded by dialect)

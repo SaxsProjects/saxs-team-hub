@@ -62,8 +62,18 @@ def check_email(to: str | None) -> None:
     from .emailer import OutgoingEmail, send_email
 
     s = get_settings()
+    if s.resend_configured:
+        if not s.email_configured:
+            sys.exit("RESEND_API_KEY is set but SMTP_FROM (the sending address) is missing")
+        recipient = to or s.admin_notify_email
+        if not recipient:
+            sys.exit("Give a recipient or set ADMIN_NOTIFY_EMAIL")
+        test = OutgoingEmail(
+            to=recipient, subject="Team Hub email test", text="If you can read this, Team Hub notifications will arrive."
+        )
+        sys.exit(0 if send_email(test) else "Resend refused the email; see the log line above")
     if not s.smtp_configured:
-        sys.exit("SMTP is not configured (set SMTP_HOST, SMTP_USER and SMTP_PASS)")
+        sys.exit("Email is not configured (set RESEND_API_KEY and SMTP_FROM, or SMTP_HOST, SMTP_USER and SMTP_PASS)")
     try:
         ctx = ssl.create_default_context()
         if s.smtp_port == 465:
