@@ -280,10 +280,13 @@ def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_d
 
 
 @router.get("/payouts", response_model=list[PayoutOut])
-def list_payouts(unpaid: bool = False, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def list_payouts(unpaid: bool = False, requested: bool = False, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """`requested=true`: unpaid payouts a contractor has asked to be paid, oldest request first."""
     q = select(Payout).order_by(Payout.due_at.asc().nulls_last(), Payout.id)
-    if unpaid:
+    if unpaid or requested:
         q = q.where(Payout.paid_at.is_(None))
+    if requested:
+        q = q.where(Payout.payment_requested_at.is_not(None)).order_by(None).order_by(Payout.payment_requested_at)
     return db.scalars(q).all()
 
 

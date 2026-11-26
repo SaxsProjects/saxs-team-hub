@@ -300,6 +300,8 @@ class Payout(Base):
     # None while a deferred task fee is waiting for the First Client Payment.
     due_at: Mapped[date | None] = mapped_column(Date)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # When the contractor last asked for this payout to be paid (Team Hub "Request payment").
+    payment_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     eft_reference: Mapped[str | None] = mapped_column(String(120))
     statement_number: Mapped[str] = mapped_column(String(32), unique=True)
     calculation: Mapped[dict] = mapped_column(JSON)

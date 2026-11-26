@@ -153,10 +153,9 @@ def main(argv: list[str]) -> int:
             return 1
         except psycopg.errors.InsufficientPrivilege:
             pass
-        cur.execute("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()")
-        tls = cur.fetchone()
+        tls = conn.pgconn.ssl_in_use  # client side: Neon's proxy terminates TLS before the database
     print(f"ok: database '{DB}' ready; app login '{user}' cannot create tables; statement_timeout={timeout}")
-    print(f"ok: TLS on the app connection: {bool(tls and tls[0])}")
+    print(f"ok: TLS on the app connection: {bool(tls)}")
     print(f"ok: wrote DATABASE_URL, MIGRATION_DATABASE_URL and keys to {out_path} (values not shown)")
     if after_migrate:
         print("ok: app login can no longer UPDATE, DELETE or TRUNCATE audit_log")

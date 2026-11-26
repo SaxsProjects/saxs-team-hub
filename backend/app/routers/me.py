@@ -1,6 +1,6 @@
 """What a signed-in team member can see: only their own data."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import current_user, require_admin, require_member
+from ..emailer import notify_admin
 from ..models import AuditLog, Document, OnboardingItem, Payout, ProjectContributor, User
+from ..payouts import format_zar
 from ..schemas import (
     AuditOut,
     DocumentOut,
@@ -21,7 +23,7 @@ from ..schemas import (
     SensitiveIn,
 )
 from ..security import decrypt_json
-from ..services import audit
+from ..services import audit, today_local
 from .people import current_rate, mask, person_out, save_sensitive
 
 router = APIRouter(prefix="/api", tags=["team member"])
@@ -96,6 +98,40 @@ def my_payouts(db: Session = Depends(get_db), user: User = Depends(require_membe
     return db.scalars(
         select(Payout).where(Payout.person_id == user.person_id).order_by(Payout.due_at.asc().nulls_last(), Payout.id)
     ).all()
+
+
+REQUEST_AGAIN_AFTER = timedelta(days=3)
+
+
+@router.post("/me/payouts/{payout_id}/request-payment", response_model=PayoutOut)
+def request_payment(payout_id: int, db: Session = Depends(get_db), user: User = Depends(require_member)):
+    """Ask the founder to pay a payout that is due. The founder pays by EFT and marks it paid;
+    the Team Hub never moves money itself."""
+    payout = db.scalars(
+        select(Payout).where(Payout.id == payout_id).with_for_update().execution_options(populate_existing=True)
+    ).first()
+    if not payout or payout.person_id != user.person_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Payout not found")
+    if payout.paid_at:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This payout has already been paid")
+    if payout.due_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Not payable yet: it becomes due after the first client payment")
+    if payout.due_at > today_local():
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Not due yet: it is due on {payout.due_at:%d %b %Y}")
+    now = datetime.now(UTC)
+    if payout.payment_requested_at and now - payout.payment_requested_at < REQUEST_AGAIN_AFTER:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Payment was already requested; you can remind again after 3 days")
+    reminder = payout.payment_requested_at is not None
+    payout.payment_requested_at = now
+    audit(db, user.email, "payout.request_payment", "payout", payout.id, after={"reminder": reminder})
+    db.commit()
+    notify_admin(
+        f"Payment {'reminder' if reminder else 'request'}: {payout.statement_number}",
+        f"{user.person.full_name} asks to be paid {format_zar(payout.amount_cents)} "
+        f"(statement {payout.statement_number}, due {payout.due_at:%d %b %Y}).\n\n"
+        "Pay it by EFT from the business account, then mark it as paid in the Team Hub with the EFT reference.",
+    )
+    return payout
 
 
 @router.get("/me/documents", response_model=list[DocumentOut])

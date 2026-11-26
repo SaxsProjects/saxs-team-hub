@@ -273,6 +273,7 @@ class PayoutOut(ORM):
     amount_cents: int
     due_at: date | None
     paid_at: datetime | None
+    payment_requested_at: datetime | None = None
     eft_reference: str | None
     statement_number: str
     calculation: dict
