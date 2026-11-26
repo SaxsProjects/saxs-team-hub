@@ -31,4 +31,9 @@ Data location: Neon `aws-eu-central-1` (Frankfurt) and Render Frankfurt. Persona
 
 ## Backups
 
-Neon's free plan keeps a short restore window (point-in-time restore of recent history). For records that must be kept for years (invoices, payouts, signed acceptances), also take a regular `pg_dump` with the migrator URL and keep it encrypted off-site.
+Neon's free plan only keeps a short restore window. Invoices, payouts and signed acceptances must be kept for years, so take an encrypted backup at least monthly (and before any risky change):
+
+1. Once: `python -m scripts.backup generate-key` and save the key in the password manager as `BACKUP_KEY` (separate from `FIELD_ENCRYPTION_KEY`).
+2. Monthly, from `backend/` with `MIGRATION_DATABASE_URL` and `BACKUP_KEY` set: `python -m scripts.backup backup teamhub-YYYY-MM.bak`. It refuses to overwrite an older file and checks the new one can be decrypted.
+3. Keep the files in two places (for example the laptop and Google Drive). They are encrypted; the personal fields inside are encrypted a second time with `FIELD_ENCRYPTION_KEY`.
+4. To restore: create an empty database, `alembic upgrade` it to the backup's revision (shown by `verify`), then `python -m scripts.backup restore FILE`.

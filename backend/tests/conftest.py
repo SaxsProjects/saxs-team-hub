@@ -87,3 +87,11 @@ def member_login(client, email="thandi@example.com", password="member-password-1
     r = client.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200, r.text
     return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+@pytest.fixture
+def team(client, admin, sent_offer):
+    """A person who accepted their offer, and their signed-in member headers."""
+    person, _, token = sent_offer
+    accept(client, token)
+    return person, member_login(client)
