@@ -107,6 +107,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4 # caches Gradle downloads (Maven Central rate-limits CI)
       - run: npm ci
       - run: npm audit --audit-level=moderate
       - run: npx cap sync android
