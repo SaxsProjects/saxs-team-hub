@@ -33,6 +33,7 @@ from psycopg import sql
 DB = "teamhub"
 MIGRATOR = "teamhub_migrator"
 APP = "teamhub_app"
+BACKUP = "teamhub_backup"  # read-only: used by scheduled backups
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -105,6 +106,7 @@ def main(argv: list[str]) -> int:
 
     migrator_pw = password_of(out.get("MIGRATION_DATABASE_URL", "")) or secrets.token_urlsafe(32)
     app_pw = password_of(out.get("DATABASE_URL", "")) or secrets.token_urlsafe(32)
+    backup_pw = password_of(out.get("BACKUP_DATABASE_URL", "")) or secrets.token_urlsafe(32)
 
     with psycopg.connect(owner_url, autocommit=True, connect_timeout=15) as conn, conn.cursor() as cur:
         ensure_role(cur, MIGRATOR, migrator_pw, limit=3, settings={"statement_timeout": "300s", "lock_timeout": "10s"})
@@ -119,13 +121,25 @@ def main(argv: list[str]) -> int:
                 "idle_in_transaction_session_timeout": "60s",
             },
         )
+        ensure_role(
+            cur,
+            BACKUP,
+            backup_pw,
+            limit=2,
+            settings={
+                "default_transaction_read_only": "on",
+                "statement_timeout": "300s",
+                "idle_in_transaction_session_timeout": "600s",
+            },
+        )
         cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DB,))
         if not cur.fetchone():
             # The owner must be able to act as the migrator to hand it the database.
             cur.execute(sql.SQL("GRANT {} TO CURRENT_USER").format(sql.Identifier(MIGRATOR)))
             cur.execute(sql.SQL("CREATE DATABASE {} OWNER {}").format(sql.Identifier(DB), sql.Identifier(MIGRATOR)))
         cur.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(DB)))
-        cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(DB), sql.Identifier(APP)))
+        for role in (APP, BACKUP):
+            cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(sql.Identifier(DB), sql.Identifier(role)))
 
     migrator_url = role_url(owner_url, MIGRATOR, migrator_pw)
     with psycopg.connect(migrator_url, autocommit=True, connect_timeout=15) as conn, conn.cursor() as cur:
@@ -138,6 +152,13 @@ def main(argv: list[str]) -> int:
             "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {a}",
         ):
             cur.execute(sql.SQL(stmt).format(m=sql.Identifier(MIGRATOR), a=sql.Identifier(APP)))
+        # The backup login can only read.
+        for stmt in (
+            "GRANT USAGE ON SCHEMA public TO {b}",
+            "ALTER DEFAULT PRIVILEGES FOR ROLE {m} IN SCHEMA public GRANT SELECT ON TABLES TO {b}",
+            "GRANT SELECT ON ALL TABLES IN SCHEMA public TO {b}",
+        ):
+            cur.execute(sql.SQL(stmt).format(m=sql.Identifier(MIGRATOR), b=sql.Identifier(BACKUP)))
         if after_migrate:
             cur.execute("SELECT to_regclass('public.audit_log') IS NOT NULL")
             if not cur.fetchone()[0]:
@@ -148,6 +169,7 @@ def main(argv: list[str]) -> int:
 
     out["DATABASE_URL"] = role_url(owner_url, APP, app_pw)
     out["MIGRATION_DATABASE_URL"] = migrator_url
+    out["BACKUP_DATABASE_URL"] = role_url(owner_url, BACKUP, backup_pw)
     out.setdefault("SECRET_KEY", secrets.token_urlsafe(48))
     out.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
     out.setdefault("JOBS_TOKEN", secrets.token_urlsafe(32))
@@ -164,9 +186,18 @@ def main(argv: list[str]) -> int:
         except psycopg.errors.InsufficientPrivilege:
             pass
         tls = conn.pgconn.ssl_in_use  # client side: Neon's proxy terminates TLS before the database
+    with psycopg.connect(out["BACKUP_DATABASE_URL"], connect_timeout=15) as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+        try:
+            cur.execute("CREATE TEMP TABLE should_fail (id int)")
+            print("FAIL: the backup login could write")
+            return 1
+        except psycopg.errors.ReadOnlySqlTransaction:
+            pass
+    print(f"ok: backup login '{BACKUP}' is read-only")
     print(f"ok: database '{DB}' ready; app login '{user}' cannot create tables; statement_timeout={timeout}")
     print(f"ok: TLS on the app connection: {bool(tls)}")
-    print(f"ok: wrote DATABASE_URL, MIGRATION_DATABASE_URL and keys to {out_path} (values not shown)")
+    print(f"ok: wrote DATABASE_URL, MIGRATION_DATABASE_URL, BACKUP_DATABASE_URL and keys to {out_path} (values not shown)")
     if after_migrate:
         print("ok: app login can no longer UPDATE, DELETE or TRUNCATE audit_log")
     return 0

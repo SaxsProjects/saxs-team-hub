@@ -4,7 +4,7 @@ Internal platform for **recruiting, onboarding and paying** the SaxsProjects tea
 
 It replaces sending PDFs on WhatsApp and tracking replies by hand. With it, SaxsProjects can send a formal offer, record an accept or decline with proof, onboard new team members securely, and calculate project-based payouts accurately.
 
-> **Status:** backend built (phases 0–4: offers, pipeline, notifications, onboarding, payouts) with tests and CI. The frontend is still to be built. See [docs/backend.md](docs/backend.md).
+> **Status:** backend complete and deployed to Render + Neon (waiting for the founder's email, bank and signature settings). The frontend is on hold. **Start with [docs/OVERVIEW.md](docs/OVERVIEW.md).**
 
 ---
 
