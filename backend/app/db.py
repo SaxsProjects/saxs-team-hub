@@ -46,7 +46,16 @@ def _make_engine(url: str):
         if url in ("sqlite://", "sqlite:///:memory:"):
             kwargs["poolclass"] = StaticPool
         return create_engine(url, **kwargs)
-    return create_engine(url, pool_pre_ping=True)
+    # Small pool for a single small instance; recycle before Neon suspends idle connections.
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=2,
+        pool_timeout=15,
+        pool_recycle=240,
+        connect_args={"application_name": "saxs-team-hub", "connect_timeout": 10},
+    )
 
 
 engine = _make_engine(get_settings().database_url)

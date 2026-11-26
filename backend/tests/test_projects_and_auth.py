@@ -144,3 +144,46 @@ def test_production_refuses_weak_config(monkeypatch):
     s = Settings(environment="production", database_url="sqlite://", secret_key="short")
     with pytest.raises(RuntimeError, match="SECRET_KEY"):
         s.check_production_ready()
+
+
+def test_production_requires_encrypted_database_connections():
+    from app.config import Settings
+
+    base = {
+        "environment": "production",
+        "secret_key": "x" * 40,
+        "field_encryption_key": "k",
+        "smtp_host": "smtp.example.com",
+        "smtp_user": "u",
+        "smtp_pass": "p",
+        "admin_notify_email": "a@example.com",
+        "signature_image_base64": "abc",
+        "signatory_name": "Director",
+    }
+    plain = Settings(**base, database_url="postgresql://app:pw@db.example.com/hub")
+    with pytest.raises(RuntimeError, match="DATABASE_URL must use an encrypted connection"):
+        plain.check_production_ready()
+    mixed = Settings(
+        **base,
+        database_url="postgresql://app:pw@db.example.com/hub?sslmode=require",
+        migration_database_url="postgresql://owner:pw@db.example.com/hub",
+    )
+    with pytest.raises(RuntimeError, match="MIGRATION_DATABASE_URL must use an encrypted connection"):
+        mixed.check_production_ready()
+    Settings(**base, database_url="postgresql://app:pw@db.example.com/hub?sslmode=require").check_production_ready()
+
+
+def test_health_reports_503_when_the_database_is_down(client):
+    from app.db import get_db
+    from app.main import app
+
+    class Broken:
+        def execute(self, *_):
+            raise RuntimeError("database unreachable")
+
+    app.dependency_overrides[get_db] = lambda: Broken()
+    try:
+        r = client.get("/api/health")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+    assert r.status_code == 503 and r.json()["database"] is False and r.json()["ok"] is False
