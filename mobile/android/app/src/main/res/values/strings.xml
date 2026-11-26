@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Team Hub</string>
+    <string name="title_activity_main">Team Hub</string>
+    <string name="package_name">za.co.saxsprojects.teamhub</string>
+    <string name="custom_url_scheme">za.co.saxsprojects.teamhub</string>
+</resources>

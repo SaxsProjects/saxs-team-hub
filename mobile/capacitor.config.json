@@ -1,0 +1,15 @@
+{
+  "appId": "za.co.saxsprojects.teamhub",
+  "appName": "Team Hub",
+  "webDir": "www",
+  "server": {
+    "url": "https://hub.saxsprojects.co.za",
+    "cleartext": false,
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#FFFFFF",
+    "webContentsDebuggingEnabled": false
+  }
+}
