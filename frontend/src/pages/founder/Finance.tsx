@@ -2,8 +2,9 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { api, downloadFile, post } from "../../api/client";
+import { api, apiBlob, post } from "../../api/client";
 import type { Client, CreditNote, FinanceReadiness, Invoice, LineInput, Project, Quotation, Receipt } from "../../api/types";
+import { usePreview } from "../../components/DocumentPreview";
 import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, Skeleton, StatCard, Tabs, paginate, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, parseRands, plural, rands, shortDay, todaySA } from "../../lib/format";
 import { projectRef } from "../member/MyProjects";
@@ -312,6 +313,7 @@ function QuotationsTab({ ctx }: { ctx: Ctx }) {
   const acceptedMonth = all.filter((x) => x.status === "accepted");
   const drafts = all.filter((x) => x.status === "draft");
   const sel = list.selected;
+  const preview = usePreview();
 
   const act = useMutation({
     mutationFn: ({ q, action }: { q: Quotation; action: "issue" | "accept" | "decline" | "delete" }) =>
@@ -404,14 +406,26 @@ function QuotationsTab({ ctx }: { ctx: Ctx }) {
             <Totals vatBp={sel.vat_rate_bp} subtotal={sel.subtotal_cents} vat={sel.vat_cents} total={sel.total_cents} />
             <div className="detail-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
               {sel.number && (
-                <button className="btn btn-secondary btn-block" onClick={() => downloadFile(`/api/quotations/${sel.id}/pdf`, `${sel.number}.pdf`).catch(ctx.onFailed)}>
-                  Download PDF
+                <button className="btn btn-secondary btn-block" onClick={() => preview({ title: `Quotation ${sel.number}`, filename: `${sel.number}.pdf`, load: () => apiBlob(`/api/quotations/${sel.id}/pdf`) })}>
+                  View PDF
                 </button>
               )}
               {sel.status === "draft" && (
                 <>
-                  <button className="btn btn-primary btn-block" disabled={act.isPending || ctx.readiness?.can_issue_quotations === false} onClick={() => act.mutate({ q: sel, action: "issue" })}>
-                    Issue quotation
+                  <button
+                    className="btn btn-primary btn-block"
+                    disabled={act.isPending || ctx.readiness?.can_issue_quotations === false}
+                    onClick={() =>
+                      preview({
+                        title: `Quotation: ${sel.title}`,
+                        filename: `quotation-draft-${sel.id}.pdf`,
+                        load: () => apiBlob(`/api/quotations/${sel.id}/pdf`),
+                        note: "This is the draft. Issuing it adds its number, today’s date and your signature, and it can’t be edited after that.",
+                        confirm: { label: "Issue quotation", run: () => act.mutateAsync({ q: sel, action: "issue" }) },
+                      })
+                    }
+                  >
+                    Preview and issue
                   </button>
                   <button className="btn btn-secondary btn-block" disabled={act.isPending} onClick={() => act.mutate({ q: sel, action: "delete" })}>
                     Delete draft
@@ -498,6 +512,7 @@ function InvoicesTab({ ctx }: { ctx: Ctx }) {
   const sel = list.selected;
   const [paying, setPaying] = useState<Invoice | null>(null);
   const [crediting, setCrediting] = useState<Invoice | null>(null);
+  const preview = usePreview();
 
   const act = useMutation({
     mutationFn: ({ i, action }: { i: Invoice; action: "issue" | "delete" }) => (action === "delete" ? api(`/api/invoices/${i.id}`, { method: "DELETE" }) : post<Invoice>(`/api/invoices/${i.id}/issue`)),
@@ -636,8 +651,20 @@ function InvoicesTab({ ctx }: { ctx: Ctx }) {
               )}
               {sel.status === "draft" && (
                 <>
-                  <button className="btn btn-primary btn-block" disabled={act.isPending || ctx.readiness?.can_issue_invoices === false} onClick={() => act.mutate({ i: sel, action: "issue" })}>
-                    Issue invoice
+                  <button
+                    className="btn btn-primary btn-block"
+                    disabled={act.isPending || ctx.readiness?.can_issue_invoices === false}
+                    onClick={() =>
+                      preview({
+                        title: `Invoice: ${sel.title}`,
+                        filename: `invoice-draft-${sel.id}.pdf`,
+                        load: () => apiBlob(`/api/invoices/${sel.id}/pdf`),
+                        note: "This is the draft. Issuing it adds its number, today’s date and your signature, and it can’t be edited after that.",
+                        confirm: { label: "Issue invoice", run: () => act.mutateAsync({ i: sel, action: "issue" }) },
+                      })
+                    }
+                  >
+                    Preview and issue
                   </button>
                   <button className="btn btn-secondary btn-block" disabled={act.isPending} onClick={() => act.mutate({ i: sel, action: "delete" })}>
                     Delete draft
@@ -646,8 +673,8 @@ function InvoicesTab({ ctx }: { ctx: Ctx }) {
               )}
               {sel.number && (
                 <div className="form-row" style={{ gap: 10 }}>
-                  <button className="btn btn-secondary" onClick={() => downloadFile(`/api/invoices/${sel.id}/pdf`, `${sel.number}.pdf`).catch(ctx.onFailed)}>
-                    Download PDF
+                  <button className="btn btn-secondary" onClick={() => preview({ title: `Invoice ${sel.number}`, filename: `${sel.number}.pdf`, load: () => apiBlob(`/api/invoices/${sel.id}/pdf`) })}>
+                    View PDF
                   </button>
                   {(sel.status === "issued" || sel.status === "part_paid") && (
                     <button className="btn btn-secondary" onClick={() => setCrediting(sel)}>
@@ -670,6 +697,7 @@ function InvoicesTab({ ctx }: { ctx: Ctx }) {
 
 function ReceiptsTab({ ctx }: { ctx: Ctx }) {
   const { data, today } = ctx;
+  const preview = usePreview();
   const invoiceOf = (id: number) => (data.invoices.data ?? []).find((i) => i.id === id);
   const all = [...data.receipts].sort((a, b) => b.received_on.localeCompare(a.received_on) || b.id - a.id);
   const list = useList(all, (r, q, s) => (!s || r.method === s) && (!q || `${r.number} ${r.reference} ${invoiceOf(r.invoice_id)?.number ?? ""} ${data.clientName(invoiceOf(r.invoice_id)?.client_id ?? -1)}`.toLowerCase().includes(q)));
@@ -753,8 +781,8 @@ function ReceiptsTab({ ctx }: { ctx: Ctx }) {
               {rands(sel.amount_cents)}
             </p>
             <div className="detail-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => downloadFile(`/api/receipts/${sel.id}/pdf`, `${sel.number}.pdf`).catch(ctx.onFailed)}>
-                Download PDF
+              <button className="btn btn-secondary btn-block" onClick={() => preview({ title: `Receipt ${sel.number}`, filename: `${sel.number}.pdf`, load: () => apiBlob(`/api/receipts/${sel.id}/pdf`) })}>
+                View PDF
               </button>
             </div>
           </section>
@@ -766,6 +794,7 @@ function ReceiptsTab({ ctx }: { ctx: Ctx }) {
 
 function CreditNotesTab({ ctx }: { ctx: Ctx }) {
   const { data, today } = ctx;
+  const preview = usePreview();
   const invoiceOf = (id: number) => (data.invoices.data ?? []).find((i) => i.id === id);
   const all = [...data.credits].sort((a, b) => b.issue_date.localeCompare(a.issue_date) || b.id - a.id);
   const list = useList(all, (r, q) => !q || `${r.number} ${r.reason} ${invoiceOf(r.invoice_id)?.number ?? ""} ${data.clientName(invoiceOf(r.invoice_id)?.client_id ?? -1)}`.toLowerCase().includes(q));
@@ -836,8 +865,8 @@ function CreditNotesTab({ ctx }: { ctx: Ctx }) {
               {rands(sel.amount_cents)}
             </p>
             <div className="detail-actions">
-              <button className="btn btn-secondary btn-block" onClick={() => downloadFile(`/api/credit-notes/${sel.id}/pdf`, `${sel.number}.pdf`).catch(ctx.onFailed)}>
-                Download PDF
+              <button className="btn btn-secondary btn-block" onClick={() => preview({ title: `Credit note ${sel.number}`, filename: `${sel.number}.pdf`, load: () => apiBlob(`/api/credit-notes/${sel.id}/pdf`) })}>
+                View PDF
               </button>
             </div>
           </section>
@@ -1134,9 +1163,10 @@ function InvoiceDialog({ data, quotation, onClose, onSaved }: { data: FinanceDat
 function PaymentDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClose: () => void; onSaved: (msg: string) => void }) {
   const [f, setF] = useState({ amount: (invoice.balance_cents / 100).toFixed(2), received_on: todaySA(), method: "eft", reference: "" });
   const [error, setError] = useState<unknown>(null);
+  const preview = usePreview();
+  const body = (amount: number) => ({ amount_cents: amount, received_on: f.received_on, method: f.method, reference: f.reference.trim() });
   const save = useMutation({
-    mutationFn: (amount: number) =>
-      post<{ receipt: Receipt; payouts: unknown[] }>(`/api/invoices/${invoice.id}/payments`, { amount_cents: amount, received_on: f.received_on, method: f.method, reference: f.reference.trim() }),
+    mutationFn: (amount: number) => post<{ receipt: Receipt; payouts: unknown[] }>(`/api/invoices/${invoice.id}/payments`, body(amount)),
     onSuccess: (r) => onSaved(`Payment recorded. Receipt ${r.receipt.number} issued${r.payouts.length ? ` and ${plural(r.payouts.length, "contributor payout")} calculated` : ""}.`),
     onError: setError,
   });
@@ -1149,7 +1179,13 @@ function PaymentDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClos
     if (!f.received_on || f.received_on > todaySA()) return setError("The date can’t be in the future.");
     if (!f.reference.trim()) return setError("Add the payment reference.");
     setError(null);
-    save.mutate(amount);
+    preview({
+      title: `Receipt for ${invoice.number}`,
+      filename: `receipt-preview-${invoice.number}.pdf`,
+      load: () => apiBlob(`/api/invoices/${invoice.id}/payments/preview`, { method: "POST", body: JSON.stringify(body(amount)) }),
+      note: "Check the receipt. Recording the payment issues it with its number and your signature, and it can’t be changed after that.",
+      confirm: { label: "Record payment", run: () => save.mutateAsync(amount) },
+    });
   }
 
   return (
@@ -1183,7 +1219,7 @@ function PaymentDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClos
             Cancel
           </button>
           <button className="btn btn-primary" disabled={save.isPending}>
-            Record payment
+            Preview receipt
           </button>
         </div>
       </form>
@@ -1195,6 +1231,7 @@ function CreditDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClose
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<unknown>(null);
+  const preview = usePreview();
   const save = useMutation({
     mutationFn: (cents: number) => post<{ credit_note: CreditNote }>(`/api/invoices/${invoice.id}/credit-notes`, { amount_cents: cents, reason: reason.trim() }),
     onSuccess: (r) => onSaved(`Credit note ${r.credit_note.number} issued.`),
@@ -1208,7 +1245,13 @@ function CreditDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClose
     if (cents > invoice.balance_cents) return setError(`You can credit at most the balance, ${rands(invoice.balance_cents)}.`);
     if (reason.trim().length < 3) return setError("Give the reason for the credit.");
     setError(null);
-    save.mutate(cents);
+    preview({
+      title: `Credit note for ${invoice.number}`,
+      filename: `credit-note-preview-${invoice.number}.pdf`,
+      load: () => apiBlob(`/api/invoices/${invoice.id}/credit-notes/preview`, { method: "POST", body: JSON.stringify({ amount_cents: cents, reason: reason.trim() }) }),
+      note: "Check the credit note. Issuing it adds its number and your signature and lowers what the client owes. It can’t be changed after that.",
+      confirm: { label: "Issue credit note", run: () => save.mutateAsync(cents) },
+    });
   }
 
   return (
@@ -1226,7 +1269,7 @@ function CreditDialog({ invoice, onClose, onSaved }: { invoice: Invoice; onClose
             Cancel
           </button>
           <button className="btn btn-primary" disabled={save.isPending}>
-            Issue credit note
+            Preview credit note
           </button>
         </div>
       </form>

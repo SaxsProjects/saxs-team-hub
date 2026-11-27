@@ -1,8 +1,8 @@
+import { useViewFile } from "../../components/DocumentPreview";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Folder } from "lucide-react";
-import { useState } from "react";
 import { Link } from "react-router";
-import { api, downloadFile } from "../../api/client";
+import { api } from "../../api/client";
 import type { DocumentInfo, MemberOverview, MyProject, Payout, RatePeriod } from "../../api/types";
 import { ErrorNote, PageHead, Skeleton, StatCard } from "../../components/ui";
 import { fullDay, percent, plural, rands, shortDay, todaySA } from "../../lib/format";
@@ -25,7 +25,6 @@ export function MyProjects() {
   const overview = useQuery({ queryKey: ["me-overview"], queryFn: () => api<MemberOverview>("/api/me/overview") });
   const rates = useQuery({ queryKey: ["me-rates"], queryFn: () => api<RatePeriod[]>("/api/me/rates") });
   const docs = useQuery({ queryKey: ["me-documents"], queryFn: () => api<DocumentInfo[]>("/api/me/documents") });
-  const [failed, setFailed] = useState<unknown>(null);
 
   if (projects.isError) return <ErrorNote error={projects.error} onRetry={() => projects.refetch()} />;
   const today = overview.data?.today ?? todaySA();
@@ -39,12 +38,12 @@ export function MyProjects() {
   const currentRate = sortedRates.find((r) => r.effective_from <= today) ?? sortedRates[0];
   const agreement = (docs.data ?? []).filter((d) => d.kind === "agreement").sort((a, b) => b.version - a.version)[0];
 
-  const download = (path: string, name: string) => downloadFile(path, name).catch(setFailed);
+  const view = useViewFile();
+  const download = (path: string, name: string) => view(path, name);
 
   return (
     <div className="page">
       <PageHead title="My projects" sub="Your contributions, shares and earnings." />
-      {!!failed && <ErrorNote error={failed} />}
 
       <div className="stats-3">
         <StatCard label="Active projects" value={projects.data ? active : <Skeleton w={40} h={30} />} />

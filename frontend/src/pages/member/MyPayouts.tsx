@@ -1,8 +1,9 @@
+import { useViewFile } from "../../components/DocumentPreview";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCircle2, FileText } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { api, downloadFile, post } from "../../api/client";
+import { api, post } from "../../api/client";
 import type { MemberOverview, MyProject, Payout } from "../../api/types";
 import { ErrorNote, PageHead, Skeleton, StatCard, Tabs } from "../../components/ui";
 import { fullDay, percent, rands, shortDay, todaySA } from "../../lib/format";
@@ -19,7 +20,6 @@ export function MyPayouts() {
   const payouts = useQuery({ queryKey: ["me-payouts"], queryFn: () => api<Payout[]>("/api/me/payouts") });
   const projects = useQuery({ queryKey: ["me-projects"], queryFn: () => api<MyProject[]>("/api/me/projects") });
   const [filter, setFilter] = useState<Filter>("unpaid");
-  const [failed, setFailed] = useState<unknown>(null);
   const [done, setDone] = useState<string | null>(null);
 
   const requestPay = useMutation({
@@ -47,12 +47,13 @@ export function MyPayouts() {
   const selected = all.find((p) => p.id === wanted) ?? shown[0];
   const select = (id: number) => setParams({ payout: String(id) }, { replace: true });
   const upcomingCents = groups.upcoming.reduce((s, p) => s + p.amount_cents, 0);
-  const download = (p: Payout) => downloadFile(statementPath(p), `${p.statement_number}.pdf`).catch(setFailed);
+  const view = useViewFile();
+  const download = (p: Payout) => view(statementPath(p), `${p.statement_number}.pdf`, `Payout statement ${p.statement_number}`);
 
   return (
     <div className="page">
       <PageHead title="My payouts" sub="See what is due and how each amount was calculated." />
-      {!!(failed ?? requestPay.error) && <ErrorNote error={failed ?? requestPay.error} />}
+      {!!requestPay.error && <ErrorNote error={requestPay.error} />}
       {done && (
         <p className="form-ok" role="status">
           <CheckCircle2 size={16} aria-hidden="true" /> {done}

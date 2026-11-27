@@ -4,6 +4,22 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.6.0] - 2026-11-27
+
+### Added
+- **See every document before it goes anywhere.** Quotations, invoices, receipts, credit notes, payout statements,
+  team documents and the payment list now open in a preview first, with zoom; Download saves exactly what you saw.
+- **Preview before issuing.** Draft quotations and invoices show the draft PDF with "Issue" as the last step.
+  Recording a payment shows the receipt, and a credit note shows the credit note, before either is numbered,
+  signed or saved (`POST /api/invoices/{id}/payments/preview` and `/credit-notes/preview` save nothing).
+- **Preview before sending an offer.** The founder sees the proposal PDF and the exact email the candidate will
+  get (`POST /api/offers/email-preview`) before it is sent. `GET /api/offers/{id}/pdf` opens an offer's attached proposal.
+- **Downloads in the Android app.** The app saves documents to Downloads/Team Hub (it couldn't download before).
+
+### Fixed
+- "View statement" downloaded the file instead of showing it.
+- A dialog opened from another dialog: Escape now closes only the top one, and the page scrolls again once all are closed.
+
 ## [1.5.0] - 2026-11-27
 
 ### Added

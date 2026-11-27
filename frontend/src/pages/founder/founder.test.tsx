@@ -7,6 +7,14 @@ import { MemoryRouter, Route, Routes } from "react-router";
 vi.mock("../../auth/AuthContext", () => ({
   useAuth: () => ({ me: { full_name: "Founder", email: "f@example.com", totp_enabled: true }, signOut: vi.fn() }),
 }));
+// pdf.js can't draw in jsdom; the preview's own behaviour (what it fetches, what its buttons do) is what's tested.
+vi.mock("../../lib/pdfRender", () => ({
+  renderPdf: async (_data: ArrayBuffer, host: HTMLElement) => {
+    host.textContent = "Rendered PDF page";
+    return { pages: 1, destroy: () => undefined };
+  },
+}));
+import { PreviewProvider } from "../../components/DocumentPreview";
 import { AuditHistory } from "./AuditHistory";
 import { FounderSettings } from "./FounderSettings";
 import { Finance } from "./Finance";
@@ -14,6 +22,7 @@ import { Payouts } from "./Payouts";
 import { TaskOrders } from "./TaskOrders";
 
 type Call = { url: string; method: string; body: unknown };
+const pdf = () => new Response("%PDF-1.4", { status: 200, headers: { "Content-Type": "application/pdf" } });
 
 function json(status: number, body: unknown): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -29,6 +38,7 @@ function renderPage(page: ReactNode, routes: Record<string, unknown>, path = "/"
       const p = new URL(url).pathname;
       calls.push({ url: p, method, body: typeof init.body === "string" ? JSON.parse(init.body) : undefined });
       const hit = routes[`${method} ${p}`] ?? (method === "GET" ? routes[p] : undefined);
+      if (typeof hit === "function") return (hit as () => Response)();
       return hit === undefined ? json(404, { detail: "Not found" }) : json(200, hit);
     }),
   );
@@ -36,9 +46,11 @@ function renderPage(page: ReactNode, routes: Record<string, unknown>, path = "/"
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path={pattern} element={page} />
-        </Routes>
+        <PreviewProvider>
+          <Routes>
+            <Route path={pattern} element={page} />
+          </Routes>
+        </PreviewProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -126,6 +138,7 @@ describe("Client finance", () => {
         "/api/invoices/11/receipts": [],
         "/api/invoices/11/credit-notes": [],
         "POST /api/invoices/11/payments": { invoice, receipt: { id: 5, number: "SP-REC-2026-005" }, payouts: [] },
+        "POST /api/invoices/11/payments/preview": pdf,
       },
       "/finance/invoices",
       "/finance/:tab",
@@ -137,14 +150,22 @@ describe("Client finance", () => {
     await user.clear(amount);
     await user.type(amount, "13 000");
     await user.type(within(dialog).getByLabelText("Reference"), "GRN-1");
-    await user.click(within(dialog).getByRole("button", { name: "Record payment" }));
+    await user.click(within(dialog).getByRole("button", { name: "Preview receipt" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("balance is only R12 000.00");
 
     await user.clear(amount);
     await user.type(amount, "12 000");
-    await user.click(within(dialog).getByRole("button", { name: "Record payment" }));
+    await user.click(within(dialog).getByRole("button", { name: "Preview receipt" }));
+
+    // The receipt is shown first; nothing is recorded until it is confirmed from the preview.
+    const preview = await screen.findByRole("dialog", { name: "Receipt for SP-INV-2026-011" });
+    expect(await within(preview).findByText("Rendered PDF page")).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.url)).toEqual(["/api/invoices/11/payments/preview"]);
+    expect(within(preview).queryByRole("button", { name: "Download" })).not.toBeInTheDocument();
+    await user.click(within(preview).getByRole("button", { name: "Record payment" }));
     await screen.findByText(/Receipt SP-REC-2026-005 issued/);
-    expect(calls.find((c) => c.method === "POST")).toMatchObject({ url: "/api/invoices/11/payments", body: { amount_cents: 1200000, method: "eft", reference: "GRN-1" } });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(calls.find((c) => c.url === "/api/invoices/11/payments")).toMatchObject({ method: "POST", body: { amount_cents: 1200000, method: "eft", reference: "GRN-1" } });
   });
 });
 

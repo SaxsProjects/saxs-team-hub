@@ -1,8 +1,9 @@
+import { useViewFile } from "../../components/DocumentPreview";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileText, Trash2 } from "lucide-react";
+import { Eye, FileText, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
-import { api, downloadFile, post } from "../../api/client";
+import { api, post } from "../../api/client";
 import type { Invoice, Payout, Project, ProjectDetail as Detail, Quotation } from "../../api/types";
 import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, PageHead, Skeleton, StatCard } from "../../components/ui";
 import { fullDay, parseRands, percent, plural, rands, shortDay, todaySA } from "../../lib/format";
@@ -23,6 +24,7 @@ export function ProjectDetail() {
   const [dialog, setDialog] = useState<null | "edit" | "contributor" | "cost">(null);
   const [done, setDone] = useState<string | null>(null);
   const [failed, setFailed] = useState<unknown>(null);
+  const view = useViewFile();
 
   const refresh = () => {
     for (const k of [["project", id], ["projects"], ["payouts"], ["dashboard"]]) qc.invalidateQueries({ queryKey: k });
@@ -209,8 +211,8 @@ export function ProjectDetail() {
                     <p className="row-title">{d.title}</p>
                     <p className="row-sub num">{d.sub}</p>
                   </div>
-                  <button className="icon-btn" aria-label={`Download ${d.title.toLowerCase()} ${d.file}`} onClick={() => downloadFile(d.path, d.file).catch(setFailed)}>
-                    <Download size={16} />
+                  <button className="icon-btn" aria-label={`View ${d.title.toLowerCase()} ${d.file}`} onClick={() => view(d.path, d.file, `${d.title} ${d.file.replace(/\.pdf$/, "")}`)}>
+                    <Eye size={16} />
                   </button>
                 </li>
               ))}

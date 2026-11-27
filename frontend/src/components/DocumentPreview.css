@@ -1,0 +1,40 @@
+/* Document preview: a large dialog whose document area scrolls on its own. */
+.dialog-backdrop:has(> .dialog-preview) { z-index: 70; }
+.dialog.dialog-preview {
+  width: min(920px, 100%); height: calc(100dvh - 32px); max-height: none;
+  display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding: 20px 24px;
+}
+.preview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.preview-file { overflow-wrap: anywhere; }
+.preview-zoom { display: flex; align-items: center; gap: 2px; flex: none; }
+.preview-zoom .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.preview-zoom-level { min-width: 44px; text-align: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.preview-note { font-size: 12px; line-height: 18px; color: var(--ink); background: var(--brand-tint); border-radius: var(--radius); padding: 10px 12px; }
+
+.preview-email { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; max-height: 32vh; overflow: auto; flex: none; }
+.preview-email dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; margin-bottom: 10px; }
+.preview-email dt { color: var(--muted); }
+.preview-email dd { font-weight: 600; overflow-wrap: anywhere; }
+.preview-email pre { font: inherit; font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.preview-body {
+  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  background: var(--canvas); border-radius: var(--radius); padding: 12px;
+}
+.preview-body:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.preview-pages { display: grid; justify-items: center; gap: 12px; min-width: min-content; }
+.preview-page { background: #fff; box-shadow: 0 1px 4px rgb(16 30 53 / 0.18); max-width: none; }
+.preview-page canvas { display: block; }
+.preview-count { text-align: center; margin-top: 8px; }
+.preview-image { display: block; max-width: 100%; margin: 0 auto; background: #fff; }
+.preview-table { overflow-x: auto; background: var(--surface); border-radius: var(--radius); }
+.preview-table td, .preview-table th { white-space: nowrap; }
+.preview-actions { flex: none; }
+
+@media (max-width: 600px) {
+  .dialog-backdrop:has(> .dialog-preview) { padding: 0; }
+  .dialog.dialog-preview { width: 100%; height: 100dvh; border-radius: 0; padding: 14px 14px max(14px, env(safe-area-inset-bottom)); }
+  .preview-body { padding: 8px; margin: 0 -6px; }
+  .preview-actions { flex-wrap: nowrap; }
+  .preview-actions .btn { flex: 1; }
+}

@@ -1,7 +1,8 @@
+import { useViewFile } from "../../components/DocumentPreview";
 import { useQuery } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { useState } from "react";
-import { api, downloadFile } from "../../api/client";
+import { api } from "../../api/client";
 import type { DocumentInfo, MemberOverview, MyProject, Payout } from "../../api/types";
 import { ErrorNote, PageHead, Skeleton, Tabs } from "../../components/ui";
 import { fileSize, fullDay, shortDay, todaySA } from "../../lib/format";
@@ -47,7 +48,7 @@ export function MyDocuments() {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [failed, setFailed] = useState<unknown>(null);
+  const view = useViewFile();
 
   if (docs.isError) return <ErrorNote error={docs.error} onRetry={() => docs.refetch()} />;
   const today = overview.data?.today ?? todaySA();
@@ -117,7 +118,6 @@ export function MyDocuments() {
           ]}
         />
       </div>
-      {!!failed && <ErrorNote error={failed} />}
 
       <div className="split">
         <section className="card">
@@ -206,8 +206,8 @@ export function MyDocuments() {
               )}
             </dl>
             <div className="detail-actions">
-              <button className="btn btn-primary" onClick={() => downloadFile(selected.path, selected.filename).catch(setFailed)}>
-                Download PDF
+              <button className="btn btn-primary" onClick={() => view(selected.path, selected.filename, selected.title)}>
+                View document
               </button>
             </div>
           </section>

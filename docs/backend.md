@@ -87,6 +87,22 @@ The signature image is never stored in the repository. Set it as configuration:
 
 Production refuses to start without the signature, and the app checks the image at startup. Quotations, receipts and credit notes cannot be issued until it is set.
 
+### Document previews
+
+Every document is seen before it is issued, sent or downloaded. These endpoints only build the document; nothing is saved,
+numbered, signed, audited or emailed:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/quotations/{id}/pdf`, `GET /api/invoices/{id}/pdf` | A draft's watermarked, unsigned PDF (the stored PDF once issued) |
+| `POST /api/invoices/{id}/payments/preview` | The receipt a payment would issue (same body and checks as `/payments`) |
+| `POST /api/invoices/{id}/credit-notes/preview` | The credit note that would be issued (same body and checks as `/credit-notes`) |
+| `POST /api/offers/email-preview` | The email a candidate would get (`person_id`, `role`, `deadline`) |
+| `GET /api/offers/{id}/pdf` | The proposal attached to an offer (founder only) |
+
+The web app draws PDFs with pdf.js, so previews work on phones and in the Android app, which saves downloads to
+`Downloads/Team Hub` through its `TeamHubFiles` plugin.
+
 ### Company details
 
 | Variable | Notes |
