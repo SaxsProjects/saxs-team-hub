@@ -4,6 +4,12 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.4.1] - 2026-11-27
+
+### Added
+- Founder settings: switch each founder email on or off (offer updates, Task Order reviews, payout reminders,
+  invoice reminders) and save with **Save changes**. Every change is recorded in the audit history.
+
 ## [1.4.0] - 2026-11-27
 
 ### Added

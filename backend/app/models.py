@@ -57,6 +57,8 @@ class User(Base):
     # Profile picture: a cleaned 512x512 WebP (see app/avatars.py). Deferred so it loads only when served.
     avatar: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
     avatar_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Founder emails switched off, e.g. {"invoices": false}. Missing keys mean on (see emailer.NOTIFY_KINDS).
+    notify_prefs: Mapped[dict | None] = mapped_column(JSON)
 
     person: Mapped["Person | None"] = relationship()
 

@@ -42,6 +42,8 @@ def remind_due_payouts(db: Session) -> int:
             "These payouts are due or overdue:\n\n"
             + "\n".join(lines)
             + "\n\nMark each as paid in the Team Hub with its EFT reference.",
+            kind="payouts",
+            db=db,
         )
     return len(due)
 
@@ -58,6 +60,8 @@ def remind_overdue_reviews(db: Session) -> int:
         notify_admin(
             f"{len(late)} task review(s) overdue",
             "These submitted tasks are waiting for you to accept them or explain what remains:\n\n" + "\n".join(lines),
+            kind="reviews",
+            db=db,
         )
     return len(late)
 
@@ -109,6 +113,8 @@ def remind_overdue_invoices(db: Session) -> int:
         notify_admin(
             f"{len(overdue)} invoice(s) overdue",
             "These invoices are past their due date:\n\n" + "\n".join(lines) + "\n\nFollow up with the client.",
+            kind="invoices",
+            db=db,
         )
     return len(overdue)
 

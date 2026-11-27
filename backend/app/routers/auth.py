@@ -16,6 +16,7 @@ from ..deps import (
     login_limiter,
     rate_key_ip,
     refresh_limiter,
+    require_admin,
     require_admin_any,
     reset_requests,
     totp_failures,
@@ -27,6 +28,7 @@ from ..schemas import (
     ForgotPasswordIn,
     LoginIn,
     MeOut,
+    NotificationPrefs,
     SetPasswordIn,
     TokenOut,
     TotpCodeIn,
@@ -277,3 +279,17 @@ def totp_enable(body: TotpCodeIn, user: User = Depends(require_admin_any), db: S
     user.totp_enabled = True
     audit(db, user.email, "auth.2fa_enabled", "user", user.id)
     db.commit()
+
+
+@router.get("/notifications", response_model=NotificationPrefs)
+def get_notifications(user: User = Depends(require_admin)):
+    return NotificationPrefs(**{k: v for k, v in (user.notify_prefs or {}).items() if k in NotificationPrefs.model_fields})
+
+
+@router.put("/notifications", response_model=NotificationPrefs)
+def set_notifications(body: NotificationPrefs, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    before = get_notifications(user).model_dump()
+    user.notify_prefs = body.model_dump()
+    audit(db, user.email, "settings.notifications", "user", user.id, before=before, after=user.notify_prefs)
+    db.commit()
+    return body

@@ -4,6 +4,7 @@ import type { AuditEntry } from "../api/types";
 const TITLES: Record<string, string> = {
   "auth.login": "Signed in",
   "auth.2fa_enabled": "Two-factor turned on",
+  "settings.notifications": "Notification settings changed",
   "auth.reset_password": "Password reset",
   "auth.set_password": "Password set",
   "auth.change_password": "Password changed",
