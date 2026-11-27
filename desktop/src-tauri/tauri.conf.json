@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SaxsProjects Team Hub",
+  "mainBinaryName": "SaxsProjects Team Hub",
+  "identifier": "za.co.saxsprojects.teamhub",
+  "version": "../package.json",
+  "build": {
+    "frontendDist": "../app"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src https://hub.saxsprojects.co.za"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "msi",
+      "nsis"
+    ],
+    "publisher": "SaxsProjects (Pty) Ltd",
+    "copyright": "SaxsProjects (Pty) Ltd",
+    "category": "Business",
+    "shortDescription": "SaxsProjects Team Hub",
+    "longDescription": "The SaxsProjects Team Hub in its own window, with Windows Hello unlock and automatic updates.",
+    "homepage": "https://hub.saxsprojects.co.za",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENDNTAwQ0EzMjE5QjRBNzIKUldSeVNwc2hvd3hRek4waFJGbHZXQ3J5ZGVHSEdVUEV1TUYwREN5LzdJNnRpSzdUenFMbnp2V3MK",
+      "endpoints": [
+        "https://github.com/SaxsProjects/saxs-team-hub/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

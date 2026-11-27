@@ -4,6 +4,17 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.8.0] - 2026-11-27
+
+### Added
+- **Team Hub for Windows.** A Windows app (`saxs-team-hub-windows-1.8.0-setup.exe`, or the `.msi`) in every release,
+  next to the Android app. It opens the Team Hub in its own window with a Start menu entry, one window only,
+  its size and place remembered, a "You're offline" page, and downloads into Downloads\Team Hub.
+- **Windows Hello unlock** in the Windows app: tick "Keep me signed in", then open it with your face, fingerprint or PIN.
+- **Automatic updates** for the Windows app: it finds new versions in the releases (`latest.json`), checks their
+  signature, asks, and installs in a few seconds.
+- Releases list the Windows installers in `SHA256SUMS.txt` with the other packages.
+
 ## [1.7.0] - 2026-11-27
 
 ### Added

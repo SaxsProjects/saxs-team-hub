@@ -48,8 +48,7 @@ async function thisDevice(): Promise<TrustedDeviceInfo | null> {
 function appDeviceName(): string | undefined {
   const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor;
   if (cap?.isNativePlatform?.()) return cap.getPlatform?.() === "ios" ? "Team Hub iPhone app" : "Team Hub Android app";
-  const tauri = (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
-  return tauri ? "Team Hub Windows app" : undefined;
+  return /TeamHubDesktop\//.test(navigator.userAgent) ? "Team Hub Windows app" : undefined;
 }
 
 const AuthContext = createContext<AuthState | null>(null);

@@ -51,6 +51,8 @@ def device_name(request: Request, given: str | None = None) -> str:
     if given and given.strip():
         return re.sub(r"[^\w .,()·'-]", "", given.strip())[:80] or "Device"
     ua = request.headers.get("user-agent", "")
+    if "TeamHubDesktop/" in ua:
+        return "Team Hub Windows app"
     system = next(
         (
             name

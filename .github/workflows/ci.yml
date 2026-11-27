@@ -114,3 +114,30 @@ jobs:
       - name: Build (unsigned debug) to prove the app compiles
         working-directory: mobile/android
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - name: Rust format, lint and tests
+        working-directory: desktop/src-tauri
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Build the installers (unsigned updater files are only made for releases)
+        run: npx tauri build --ci --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Both installers were produced
+        run: ls src-tauri/target/release/bundle/msi/*.msi src-tauri/target/release/bundle/nsis/*-setup.exe
