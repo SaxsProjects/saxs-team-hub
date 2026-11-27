@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..company import company_settings
 from ..db import get_db
 from ..deps import current_user, require_admin
 from ..models import PROJECT_STATUSES, ClientPayment, Payout, Project, ProjectContributor, ProjectCost, User
@@ -326,6 +327,7 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
             paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
             eft_reference=payout.eft_reference,
             issued_on=payout.created_at.date(),
+            company=company_settings(db),
         )
         headers = {"Content-Disposition": f'inline; filename="{payout.statement_number}.pdf"'}
         return Response(pdf, media_type="application/pdf", headers=headers)
@@ -341,6 +343,7 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
         paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
         eft_reference=payout.eft_reference,
         issued_on=payout.created_at.date(),
+        company=company_settings(db),
     )
     return Response(
         pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{payout.statement_number}.pdf"'}

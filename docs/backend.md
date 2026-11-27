@@ -94,10 +94,18 @@ Production refuses to start without the signature, and the app checks the image 
 | `COMPANY_LEGAL_NAME`, `COMPANY_REGISTRATION_NUMBER`, `COMPANY_VAT_NUMBER` | Invoices cannot be issued until the registration number is set |
 | `COMPANY_ADDRESS` | Lines separated by `|` |
 | `COMPANY_EMAIL`, `COMPANY_PHONE`, `COMPANY_WEBSITE` | |
-| `COMPANY_BANK_NAME`, `COMPANY_BANK_ACCOUNT_NAME`, `COMPANY_BANK_ACCOUNT_NUMBER`, `COMPANY_BANK_BRANCH_CODE`, `COMPANY_BANK_ACCOUNT_TYPE` | Environment variables only, never committed. Invoices cannot be issued until name, account number and branch code are set |
+| `COMPANY_BANK_NAME`, `COMPANY_BANK_ACCOUNT_NAME`, `COMPANY_BANK_ACCOUNT_NUMBER`, `COMPANY_BANK_BRANCH_CODE`, `COMPANY_BANK_ACCOUNT_TYPE` | Never committed. Invoices cannot be issued until name, account number and branch code are set |
 | `QUOTE_VALID_DAYS` (30), `INVOICE_DUE_DAYS` (7), `DEPOSIT_PERCENT` (50), `VAT_RATE_BP` (1500) | Defaults in brackets |
 
-`GET /api/finance/readiness` lists anything still missing without ever returning the values.
+These variables are the starting values. The founder can change all of them except the trading name and the
+signature image in **Settings → Company** (`GET/PUT /api/company`, `app/company.py`): founder only, two-factor
+required, the current password for every change (bank account, accounts email and registered name all steer
+client payments), every change audited (account numbers masked) and
+emailed to `ADMIN_NOTIFY_EMAIL` at once. Saved values are stored encrypted in `company_profile` and win
+over the variables. `GET /api/finance/readiness` lists anything still missing.
+
+`GET /api/audit?scope=workspace` returns business activity only; `scope=account` returns sign-ins, security
+events and personal settings (shown in Settings → Security instead of Audit history).
 
 ## Client IP addresses and sign-in limits
 

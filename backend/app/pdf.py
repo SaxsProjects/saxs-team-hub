@@ -15,7 +15,7 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
-from .config import get_settings
+from .config import Settings, get_settings
 from .payouts import format_bp, format_zar
 
 BLUE = (26, 95, 224)
@@ -66,12 +66,14 @@ def _d(day: date | None) -> str:
 
 
 class _Doc(FPDF):
-    def __init__(self, title: str, watermark: str | None = None):
+    def __init__(self, title: str, watermark: str | None = None, company: Settings | None = None):
         super().__init__(format="A4")
+        # Company details to print: the server settings with the founder's saved details on top (app/company.py).
+        self.s = company or get_settings()
         self.doc_title = title
         self.watermark = watermark
         self.set_title(_safe(title))
-        self.set_author(_safe(get_settings().company_legal_name))
+        self.set_author(_safe(self.s.company_legal_name))
         self.set_auto_page_break(auto=True, margin=18)
         self.set_margins(18, 18, 18)
         self.add_page()
@@ -85,7 +87,7 @@ class _Doc(FPDF):
                     self.text(105 - width / 2, 155, _safe(self.watermark))
         self.set_font("Helvetica", "B", 16)
         self.set_text_color(*BLUE)
-        self.cell(0, 8, _safe(get_settings().company_name), new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 8, _safe(self.s.company_name), new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "B", 12)
         self.set_text_color(*NAVY)
         self.cell(0, 7, _safe(self.doc_title), new_x="LMARGIN", new_y="NEXT")
@@ -95,7 +97,7 @@ class _Doc(FPDF):
         self.ln(6)
 
     def footer(self):
-        s = get_settings()
+        s = self.s
         parts = [s.company_legal_name]
         if s.company_registration_number:
             parts.append(f"Reg. {s.company_registration_number}")
@@ -127,7 +129,7 @@ class _Doc(FPDF):
         self.cell(0, 6, _safe(text.upper()), new_x="LMARGIN", new_y="NEXT")
 
     def company_details(self):
-        s = get_settings()
+        s = self.s
         lines = [s.company_legal_name]
         ids = []
         if s.company_registration_number:
@@ -206,7 +208,7 @@ class _Doc(FPDF):
 
     def signature_block(self, label: str, on: date | None = None):
         """The director's signature over their name, title and the date."""
-        s = get_settings()
+        s = self.s
         if self.get_y() > 235:
             self.add_page()
         self.ln(6)
@@ -257,9 +259,9 @@ class _Doc(FPDF):
 # ---- Finance documents ---------------------------------------------------------------------------
 
 
-def quotation_pdf(q, *, draft: bool) -> bytes:
-    s = get_settings()
-    doc = _Doc(f"QUOTATION {q.number or ''}".strip(), watermark="DRAFT - NOT ISSUED" if draft else None)
+def quotation_pdf(q, *, draft: bool, company: Settings | None = None) -> bytes:
+    s = company or get_settings()
+    doc = _Doc(f"QUOTATION {q.number or ''}".strip(), watermark="DRAFT - NOT ISSUED" if draft else None, company=company)
     doc.company_details()
     doc.row("Quotation number", q.number or "Draft (numbered when issued)")
     doc.row("Date", _d(q.issue_date))
@@ -289,10 +291,12 @@ def quotation_pdf(q, *, draft: bool) -> bytes:
     return bytes(doc.output())
 
 
-def invoice_pdf(inv, *, draft: bool) -> bytes:
-    s = get_settings()
+def invoice_pdf(inv, *, draft: bool, company: Settings | None = None) -> bytes:
+    s = company or get_settings()
     title = "TAX INVOICE" if inv.vat_rate_bp else "INVOICE"
-    doc = _Doc(f"{title} {inv.number or ''}".strip(), watermark="DRAFT - NOT VALID FOR PAYMENT" if draft else None)
+    doc = _Doc(
+        f"{title} {inv.number or ''}".strip(), watermark="DRAFT - NOT VALID FOR PAYMENT" if draft else None, company=company
+    )
     doc.company_details()
     doc.row("Invoice number", inv.number or "Draft (numbered when issued)")
     doc.row("Invoice date", _d(inv.issue_date))
@@ -332,8 +336,8 @@ def invoice_pdf(inv, *, draft: bool) -> bytes:
     return bytes(doc.output())
 
 
-def receipt_pdf(receipt, invoice) -> bytes:
-    doc = _Doc(f"RECEIPT {receipt.number}")
+def receipt_pdf(receipt, invoice, *, company: Settings | None = None) -> bytes:
+    doc = _Doc(f"RECEIPT {receipt.number}", company=company)
     doc.company_details()
     doc.row("Receipt number", receipt.number)
     doc.row("Date issued", _d(receipt.issue_date))
@@ -349,8 +353,8 @@ def receipt_pdf(receipt, invoice) -> bytes:
     return bytes(doc.output())
 
 
-def credit_note_pdf(note, invoice) -> bytes:
-    doc = _Doc(f"CREDIT NOTE {note.number}")
+def credit_note_pdf(note, invoice, *, company: Settings | None = None) -> bytes:
+    doc = _Doc(f"CREDIT NOTE {note.number}", company=company)
     doc.company_details()
     doc.row("Credit note number", note.number)
     doc.row("Date", _d(note.issue_date))
@@ -378,8 +382,9 @@ def acceptance_record_pdf(
     user_agent: str | None,
     offer_hash: str,
     pdf_sha256: str | None,
+    company: Settings | None = None,
 ) -> bytes:
-    doc = _Doc("Offer acceptance record")
+    doc = _Doc("Offer acceptance record", company=company)
     doc.para(
         "This record confirms that the offer below was accepted electronically by typing the "
         "candidate's full name as an electronic signature (Electronic Communications and "
@@ -412,8 +417,9 @@ def payout_statement_pdf(
     paid_at: str | None,
     eft_reference: str | None,
     issued_on: date | None = None,
+    company: Settings | None = None,
 ) -> bytes:
-    doc = _Doc(f"Contributor payout statement {statement_number}")
+    doc = _Doc(f"Contributor payout statement {statement_number}", company=company)
     doc.row("Contributor", contributor)
     doc.row("Project", f"{project_name} ({client_name})")
     doc.row("Client payment", f"{payment_date} - ref {payment_reference}")
@@ -460,8 +466,9 @@ def task_fee_statement_pdf(
     paid_at: str | None,
     eft_reference: str | None,
     issued_on: date | None = None,
+    company: Settings | None = None,
 ) -> bytes:
-    doc = _Doc(f"Task fee statement {statement_number}")
+    doc = _Doc(f"Task fee statement {statement_number}", company=company)
     doc.row("Contractor", contributor)
     doc.row("Task Order", f"{task_number} - {title}")
     doc.row("Deliverable", deliverable[:300])

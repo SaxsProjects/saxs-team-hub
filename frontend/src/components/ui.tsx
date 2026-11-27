@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router";
 
 export function Skeleton({ w = "100%", h = 16 }: { w?: number | string; h?: number }) {
   return <span className="skeleton" style={{ display: "block", width: w, height: h }} aria-hidden="true" />;
@@ -63,14 +64,57 @@ export function Tabs<K extends string>({ tabs, value, onChange, label }: { tabs:
 }
 
 /** Small confirm / form dialog. Closes on Escape and on a click outside the box. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A modal dialog: moves focus inside on open (to an autoFocus field, else the first control), keeps Tab
+ * inside, closes on Escape or a backdrop click, stops the page behind from scrolling, and gives focus
+ * back to whatever opened it.
+ */
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const box = ref.current;
+    if (box && !box.contains(document.activeElement)) {
+      const first = box.querySelector<HTMLElement>("[autofocus]") ?? box.querySelector<HTMLElement>(FOCUSABLE);
+      (first ?? box).focus();
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeRef.current();
+      } else if (e.key === "Tab" && box) {
+        const items = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (!first || !last) return;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = overflow;
+      if (opener && document.contains(opener)) opener.focus();
+    };
+  }, []);
+
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
-    >
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
         <h3 className="dialog-title">{title}</h3>
         {children}
       </div>
@@ -147,12 +191,24 @@ export function FormError({ error }: { error: unknown }) {
 }
 
 /** "Showing 6 of 12 · Previous 1 2 Next" under a table. */
-export function Pager({ page, pages, total, shown, noun, onPage }: { page: number; pages: number; total: number; shown: number; noun: string; onPage: (p: number) => void }) {
+export function Pager({
+  page,
+  pages,
+  total,
+  shown,
+  noun,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  shown: number;
+  noun: string;
+  onPage: (p: number) => void;
+}) {
   return (
     <div className="pager">
-      <span>
-        {shown === total ? `${total} ${noun}` : `Showing ${shown} of ${total} ${noun}`}
-      </span>
+      <span>{shown === total ? `${total} ${noun}` : `Showing ${shown} of ${total} ${noun}`}</span>
       {pages > 1 && (
         <nav aria-label="Pages" className="pager-nav">
           <button className="link-btn" disabled={page === 0} onClick={() => onPage(page - 1)}>
@@ -179,4 +235,15 @@ export function paginate<T>(items: T[], page: number, size = PAGE_SIZE): { rows:
   const pages = Math.max(1, Math.ceil(items.length / size));
   const p = Math.min(page, pages - 1);
   return { rows: items.slice(p * size, p * size + size), pages, page: p };
+}
+
+/** The selected row of a list page, opened from a link such as /task-orders?open=24 (search, activity). */
+export function useSelectedFromUrl(): [number | null, (id: number | null) => void] {
+  const [params] = useSearchParams();
+  const open = Number(params.get("open")) || null;
+  const [id, setId] = useState<number | null>(open);
+  useEffect(() => {
+    if (open) setId(open);
+  }, [open]);
+  return [id, setId];
 }

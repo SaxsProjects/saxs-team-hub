@@ -1,10 +1,11 @@
 """What a signed-in team member can see: only their own data."""
 
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -161,15 +162,26 @@ def download_document(document_id: int, db: Session = Depends(get_db), user: Use
     )
 
 
+# Audit actions about the founder's own account rather than the business (kept out of Audit history).
+ACCOUNT_ACTION_PREFIXES = ("auth.", "settings.", "user.avatar_", "user.create_admin")
+
+
 @router.get("/audit", response_model=list[AuditOut])
 def audit_log(
     entity: str | None = None,
     entity_id: int | None = None,
+    scope: Literal["workspace", "account", "all"] = "all",
     limit: int = 200,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    """`scope=workspace`: business activity only. `scope=account`: sign-ins, security and personal settings."""
     q = select(AuditLog).order_by(AuditLog.id.desc()).limit(min(max(limit, 1), 1000))
+    account = or_(*(AuditLog.action.startswith(prefix) for prefix in ACCOUNT_ACTION_PREFIXES))
+    if scope == "workspace":
+        q = q.where(~account)
+    elif scope == "account":
+        q = q.where(account)
     if entity:
         q = q.where(AuditLog.entity == entity)
     if entity_id is not None:

@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { api, post } from "../../api/client";
-import type { FinanceReadiness, NotificationPrefs } from "../../api/types";
+import type { AuditEntry, CompanyDetails, FinanceReadiness, NotificationPrefs } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
 import { Dialog, Done, Field, FormError, PageHead, Skeleton } from "../../components/ui";
+import { describeAudit } from "../../lib/activity";
+import { clock, shortDate } from "../../lib/format";
 import { PasswordDialog } from "../member/MemberSettings";
 import "../overview.css";
 import "../pages.css";
@@ -16,32 +18,54 @@ const NOTIFICATIONS: { key: keyof NotificationPrefs; title: string; sub: string 
   { key: "invoices", title: "Invoice reminders", sub: "Invoices past their due date" },
 ];
 
+type CompanyField = {
+  key: keyof CompanyDetails;
+  label: string;
+  hint?: string;
+  type?: string;
+  inputMode?: "numeric" | "email" | "tel" | "url";
+  multiline?: boolean;
+};
+
+const COMPANY_FIELDS: CompanyField[] = [
+  { key: "company_legal_name", label: "Registered name" },
+  { key: "company_registration_number", label: "Registration number", hint: "As on your CIPC certificate, e.g. 2026/123456/07." },
+  {
+    key: "company_vat_number",
+    label: "VAT number",
+    hint: "Leave empty if not VAT registered. Once set, new invoices are tax invoices with 15% VAT.",
+    inputMode: "numeric",
+  },
+  { key: "company_address", label: "Address", hint: "One line per row, as it should print on documents.", multiline: true },
+  { key: "company_email", label: "Accounts email", type: "email", inputMode: "email" },
+  { key: "company_phone", label: "Phone", type: "tel", inputMode: "tel" },
+  { key: "company_website", label: "Website", inputMode: "url" },
+  { key: "signatory_name", label: "Signatory name", hint: "The person whose signature prints on issued documents." },
+  { key: "signatory_title", label: "Signatory title" },
+];
+
+const BANK_FIELDS: CompanyField[] = [
+  { key: "company_bank_name", label: "Bank" },
+  { key: "company_bank_account_name", label: "Account holder", hint: "Leave empty to use the registered name." },
+  { key: "company_bank_account_number", label: "Account number", inputMode: "numeric" },
+  { key: "company_bank_branch_code", label: "Branch code", hint: "6 digits.", inputMode: "numeric" },
+  { key: "company_bank_account_type", label: "Account type", hint: "e.g. Business current account." },
+];
+
 export function FounderSettings() {
   const { me, signOut } = useAuth();
   const readiness = useQuery({ queryKey: ["finance", "readiness"], queryFn: () => api<FinanceReadiness>("/api/finance/readiness") });
-  const [dialog, setDialog] = useState<null | "password" | "2fa">(null);
+  const company = useQuery({ queryKey: ["company"], queryFn: () => api<CompanyDetails>("/api/company") });
+  const security = useQuery({ queryKey: ["audit", "account"], queryFn: () => api<AuditEntry[]>("/api/audit?scope=account&limit=5") });
+  const [dialog, setDialog] = useState<null | "password" | "2fa" | "company" | "bank">(null);
   const [done, setDone] = useState<string | null>(null);
   const r = readiness.data;
-  const qc = useQueryClient();
-  const saved = useQuery({ queryKey: ["notifications"], queryFn: () => api<NotificationPrefs>("/api/auth/notifications") });
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
-  useEffect(() => {
-    if (saved.data) setPrefs(saved.data);
-  }, [saved.data]);
-  const dirty = !!prefs && !!saved.data && NOTIFICATIONS.some((n) => prefs[n.key] !== saved.data[n.key]);
-  const save = useMutation({
-    mutationFn: () => api<NotificationPrefs>("/api/auth/notifications", { method: "PUT", body: JSON.stringify(prefs) }),
-    onSuccess: (data) => (qc.setQueryData(["notifications"], data), setDone("Notification settings saved.")),
-  });
+  const c = company.data;
+  const canEdit = !!me?.totp_enabled;
 
   return (
     <div className="page">
-      <PageHead title="Settings" sub="Your workspace, profile and preferences.">
-        <button className="btn btn-primary" disabled={!dirty || save.isPending} onClick={() => (setDone(null), save.mutate())}>
-          Save changes
-        </button>
-      </PageHead>
-      <FormError error={save.error ?? saved.error} />
+      <PageHead title="Settings" sub="Your workspace, profile and preferences." />
       <Done text={done} />
 
       <div className="grid-2">
@@ -65,18 +89,45 @@ export function FounderSettings() {
         <section className="card">
           <div className="card-head">
             <h3 className="card-title">Company</h3>
-            {r && <span className={`chip ${r.missing.length ? "chip-warning" : "chip-success"}`}>{r.missing.length ? "Details missing" : "Ready to invoice"}</span>}
+            {r && (
+              <span className={`chip ${r.missing.length ? "chip-warning" : "chip-success"}`}>{r.missing.length ? "Details missing" : "Ready to invoice"}</span>
+            )}
           </div>
           <div className="form-card">
-            {!r && <Skeleton h={160} />}
-            {r && (
+            {(readiness.isPending || company.isPending) && <Skeleton h={160} />}
+            <FormError error={company.error ?? readiness.error} />
+            {r && c && (
               <>
-                <Status title="VAT status" ok={r.vat_registered} okText="VAT registered" offText="Not VAT registered" neutral />
-                <Status title="Registration number" ok={r.registration_number_set} />
-                <Status title="Banking details" ok={r.bank_details_set} />
-                <Status title="Signatory name" ok={r.signatory_name_set} />
-                <Status title="Signature" ok={r.signature_set} />
-                <p className="field-hint">Company details are kept in the server settings so they can’t be changed from a browser. They print on quotations, invoices and receipts.</p>
+                <SettingRow title="Trading name" sub={c.company_name}>
+                  <button className="btn btn-secondary" onClick={() => (setDone(null), setDialog("company"))} disabled={!canEdit}>
+                    Edit details
+                  </button>
+                </SettingRow>
+                <hr className="divider" />
+                <SettingRow title="Registered name" sub={[c.company_legal_name, c.company_registration_number].filter(Boolean).join(" · ") || "Not set"} />
+                <SettingRow title="VAT status" sub={c.company_vat_number ? `VAT no. ${c.company_vat_number}` : "No VAT is charged on invoices"}>
+                  <span className={`chip ${r.vat_registered ? "chip-success" : "chip-neutral"}`}>
+                    {r.vat_registered ? "VAT registered" : "Not VAT registered"}
+                  </span>
+                </SettingRow>
+                <SettingRow title="Signs documents" sub={c.signatory_name ? `${c.signatory_name}, ${c.signatory_title}` : "Not set"}>
+                  <span className={`chip ${r.signature_set ? "chip-success" : "chip-warning"}`}>{r.signature_set ? "Signature on file" : "No signature"}</span>
+                </SettingRow>
+                <hr className="divider" />
+                <SettingRow
+                  title="Banking details"
+                  sub={r.bank_details_set ? `${c.company_bank_name} · ${maskAccount(c.company_bank_account_number)}` : "Not set: invoices can’t be issued yet"}
+                  subClass={r.bank_details_set ? "success-text" : "warning-text"}
+                >
+                  <button className="btn btn-secondary" onClick={() => (setDone(null), setDialog("bank"))} disabled={!canEdit}>
+                    Manage securely
+                  </button>
+                </SettingRow>
+                <p className="field-hint">
+                  {canEdit
+                    ? "These print on quotations, invoices, receipts and statements. Changes need your password, are recorded and are emailed to you."
+                    : "Turn on two-factor authentication to edit company details."}
+                </p>
               </>
             )}
           </div>
@@ -87,7 +138,11 @@ export function FounderSettings() {
             <h3 className="card-title">Security</h3>
           </div>
           <div className="form-card">
-            <SettingRow title="Two-factor authentication" sub={me?.totp_enabled ? "Enabled" : "Off"} subClass={me?.totp_enabled ? "success-text" : "warning-text"}>
+            <SettingRow
+              title="Two-factor authentication"
+              sub={me?.totp_enabled ? "Enabled" : "Off"}
+              subClass={me?.totp_enabled ? "success-text" : "warning-text"}
+            >
               {!me?.totp_enabled && (
                 <button className="btn btn-secondary" onClick={() => (setDone(null), setDialog("2fa"))}>
                   Turn on 2FA
@@ -106,41 +161,177 @@ export function FounderSettings() {
                 Sign out
               </button>
             </SettingRow>
+            <hr className="divider" />
+            <div>
+              <p className="setting-title">Recent sign-ins and security events</p>
+              {security.isPending && <Skeleton h={80} />}
+              <FormError error={security.error} />
+              {security.data?.length === 0 && <p className="row-sub">Nothing yet.</p>}
+              {!!security.data?.length && (
+                <ul className="security-log">
+                  {security.data.map((e) => {
+                    const d = describeAudit(e);
+                    return (
+                      <li key={e.id} className={d.tone === "amber" ? "warning-text" : undefined}>
+                        <span>{d.title}</span>
+                        <time dateTime={e.at}>
+                          {shortDate(e.at)} · {clock(e.at)}
+                        </time>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           </div>
         </section>
 
-        <section className="card">
-          <div className="card-head">
-            <h3 className="card-title">Notifications</h3>
-            <span className="th-note">Emailed to you</span>
-          </div>
-          <div className="form-card">
-            {!prefs && !saved.error && <Skeleton h={160} />}
-            {prefs &&
-              NOTIFICATIONS.map((n, i) => (
-                <div key={n.key}>
-                  {i > 0 && <hr className="divider" style={{ marginBottom: 14 }} />}
-                  <SettingRow title={n.title} sub={n.sub}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={prefs[n.key]}
-                      aria-label={n.title}
-                      className="switch"
-                      onClick={() => setPrefs({ ...prefs, [n.key]: !prefs[n.key] })}
-                    >
-                      <span className="switch-knob" />
-                    </button>
-                  </SettingRow>
-                </div>
-              ))}
-          </div>
-        </section>
+        <NotificationsCard />
       </div>
 
       {dialog === "password" && <PasswordDialog onClose={() => setDialog(null)} onDone={() => (setDialog(null), setDone("Password changed."))} />}
       {dialog === "2fa" && <TwoFactorDialog onClose={() => setDialog(null)} onDone={() => (setDialog(null), setDone("Two-factor authentication is on."))} />}
+      {(dialog === "company" || dialog === "bank") && c && (
+        <CompanyDialog bank={dialog === "bank"} current={c} onClose={() => setDialog(null)} onDone={(text) => (setDialog(null), setDone(text))} />
+      )}
     </div>
+  );
+}
+
+function maskAccount(n: string): string {
+  return n ? `•••• ${n.slice(-4)}` : "";
+}
+
+/** Switches save as soon as they're flipped, like any on/off switch; a failed save flips back and says why. */
+function NotificationsCard() {
+  const qc = useQueryClient();
+  const saved = useQuery({ queryKey: ["notifications"], queryFn: () => api<NotificationPrefs>("/api/auth/notifications") });
+  const [status, setStatus] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (next: NotificationPrefs) => api<NotificationPrefs>("/api/auth/notifications", { method: "PUT", body: JSON.stringify(next) }),
+    onMutate: (next) => {
+      const before = qc.getQueryData<NotificationPrefs>(["notifications"]);
+      qc.setQueryData(["notifications"], next);
+      setStatus(null);
+      return { before };
+    },
+    onError: (_e, _next, ctx) => qc.setQueryData(["notifications"], ctx?.before),
+    onSuccess: (data) => (qc.setQueryData(["notifications"], data), setStatus("Saved")),
+  });
+  const prefs = saved.data;
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h3 className="card-title">Notifications</h3>
+        <span className={`th-note ${status && !save.isPending ? "success-text" : ""}`} role="status" aria-live="polite">
+          {save.isPending ? "Saving…" : (status ?? "Emailed to you")}
+        </span>
+      </div>
+      <div className="form-card">
+        {saved.isPending && <Skeleton h={160} />}
+        <FormError error={saved.error ?? save.error} />
+        {prefs &&
+          NOTIFICATIONS.map((n, i) => (
+            <div key={n.key}>
+              {i > 0 && <hr className="divider" style={{ marginBottom: 14 }} />}
+              <SettingRow title={n.title} sub={n.sub}>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={prefs[n.key]}
+                  aria-label={n.title}
+                  className="switch"
+                  disabled={save.isPending}
+                  onClick={() => save.mutate({ ...prefs, [n.key]: !prefs[n.key] })}
+                >
+                  <span className="switch-knob" />
+                </button>
+              </SettingRow>
+            </div>
+          ))}
+      </div>
+    </section>
+  );
+}
+
+function CompanyDialog({ bank, current, onClose, onDone }: { bank: boolean; current: CompanyDetails; onClose: () => void; onDone: (text: string) => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<CompanyDetails>(current);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const fields = bank ? BANK_FIELDS : COMPANY_FIELDS;
+  const save = useMutation({
+    mutationFn: () => api<CompanyDetails>("/api/company", { method: "PUT", body: JSON.stringify({ ...form, current_password: password }) }),
+    onSuccess: (data) => {
+      qc.setQueryData(["company"], data);
+      qc.invalidateQueries({ queryKey: ["finance", "readiness"] });
+      onDone(`${bank ? "Banking" : "Company"} details saved. A confirmation email is on its way to you.`);
+    },
+    onError: setError,
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!bank && form.company_legal_name.trim().length < 2) return setError("Enter the company’s registered name.");
+    if (!password) return setError("Enter your current password to save these changes.");
+    setError(null);
+    save.mutate();
+  }
+
+  return (
+    <Dialog title={bank ? "Banking details" : "Company details"} onClose={onClose}>
+      <form onSubmit={submit} noValidate style={{ display: "grid", gap: 14 }}>
+        {bank && (
+          <p className="detail-p">
+            This is the account clients pay into. It prints on every invoice, so changing it needs your password and is emailed to you.
+          </p>
+        )}
+        {fields.map((f, i) => (
+          <Field key={f.key} id={`co-${f.key}`} label={f.label} hint={f.hint}>
+            {f.multiline ? (
+              // Stored as "line|line|line" on the server; edited as real lines here.
+              <textarea
+                id={`co-${f.key}`}
+                className="input"
+                rows={3}
+                value={form[f.key].replace(/\|/g, "\n")}
+                onChange={(e) => setForm({ ...form, [f.key]: e.target.value.replace(/\r?\n/g, "|") })}
+              />
+            ) : (
+              <input
+                id={`co-${f.key}`}
+                className="input"
+                type={f.type ?? "text"}
+                inputMode={f.inputMode}
+                autoFocus={i === 0}
+                value={form[f.key]}
+                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+              />
+            )}
+          </Field>
+        ))}
+        <Field id="co-password" label="Your current password" hint="Needed for any change: these details tell clients how to pay you.">
+          <input
+            id="co-password"
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <FormError error={error} />
+        <div className="form-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" disabled={save.isPending}>
+            {save.isPending ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -149,18 +340,10 @@ function SettingRow({ title, sub, subClass, children }: { title: string; sub: st
     <div className="setting-row">
       <div>
         <p className="setting-title">{title}</p>
-        <p className={`row-sub ${subClass ?? ""}`}>{sub}</p>
+        {sub && <p className={`row-sub ${subClass ?? ""}`}>{sub}</p>}
       </div>
       {children}
     </div>
-  );
-}
-
-function Status({ title, ok, okText = "Configured", offText = "Missing", neutral }: { title: string; ok: boolean; okText?: string; offText?: string; neutral?: boolean }) {
-  return (
-    <SettingRow title={title} sub="">
-      <span className={`chip ${ok ? "chip-success" : neutral ? "chip-neutral" : "chip-warning"}`}>{ok ? okText : offText}</span>
-    </SettingRow>
   );
 }
 
@@ -168,7 +351,13 @@ function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDone: () 
   const qc = useQueryClient();
   const [code, setCode] = useState("");
   const [error, setError] = useState<unknown>(null);
-  const setup = useQuery({ queryKey: ["2fa-setup"], queryFn: () => post<{ secret: string; otpauth_uri: string }>("/api/auth/2fa/setup"), staleTime: Infinity, gcTime: 0, retry: false });
+  const setup = useQuery({
+    queryKey: ["2fa-setup"],
+    queryFn: () => post<{ secret: string; otpauth_uri: string }>("/api/auth/2fa/setup"),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
   const enable = useMutation({
     mutationFn: () => post("/api/auth/2fa/enable", { code: code.trim() }),
     onSuccess: () => (qc.invalidateQueries({ queryKey: ["me"] }), onDone()),
@@ -194,7 +383,15 @@ function TwoFactorDialog({ onClose, onDone }: { onClose: () => void; onDone: () 
           </Field>
         )}
         <Field id="tf-code" label="6-digit code">
-          <input id="tf-code" className="input num" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />
+          <input
+            id="tf-code"
+            className="input num"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
         </Field>
         <FormError error={error} />
         <div className="form-actions">

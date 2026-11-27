@@ -34,7 +34,7 @@ export function FounderOverview() {
     queryFn: () => api<TaskOrder[]>("/api/task-orders?status_filter=submitted"),
   });
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api<Project[]>("/api/projects") });
-  const activity = useQuery({ queryKey: ["audit", 4], queryFn: () => api<AuditEntry[]>("/api/audit?limit=4") });
+  const activity = useQuery({ queryKey: ["audit", 4], queryFn: () => api<AuditEntry[]>("/api/audit?scope=workspace&limit=4") });
 
   const inMotion = (projects.data ?? []).filter((p) => ACTIVE.has(p.status)).slice(0, 5);
   const details = useQueries({

@@ -371,3 +371,21 @@ export interface NotificationPrefs {
   payouts: boolean;
   invoices: boolean;
 }
+
+export interface CompanyDetails {
+  company_name: string;
+  company_legal_name: string;
+  company_registration_number: string;
+  company_vat_number: string;
+  company_address: string;
+  company_email: string;
+  company_phone: string;
+  company_website: string;
+  company_bank_name: string;
+  company_bank_account_name: string;
+  company_bank_account_number: string;
+  company_bank_branch_code: string;
+  company_bank_account_type: string;
+  signatory_name: string;
+  signatory_title: string;
+}

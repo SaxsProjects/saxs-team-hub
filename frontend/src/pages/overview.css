@@ -84,7 +84,10 @@
   .task { flex-wrap: wrap; }
 }
 @media (max-width: 480px) {
-  .stats-4 { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  /* Two compact stats per row so the list below them still starts on the first screen. */
+  .stats-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-value { font-size: 20px; line-height: 28px; margin-top: 2px; }
   .attention { flex-wrap: wrap; }
   .attention-action { width: auto; padding-left: 49px; }
   .attention + .attention { margin: 0 16px; }
