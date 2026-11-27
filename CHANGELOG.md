@@ -8,8 +8,8 @@ Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packag
 
 ### Added
 - **Company details in Settings**: edit the registered name, registration and VAT numbers, address, contact details,
-  signatory and banking details from the app. Needs two-factor; banking changes also need your password, are
-  emailed to you at once and are recorded with the account number masked. Documents use the saved details.
+  signatory and banking details from the app. Needs two-factor and your password; every change is
+  emailed to you at once and recorded with the account number masked. Documents use the saved details.
 - **Search that finds things**: people, projects, Task Orders, clients, invoices, quotations and payout statements,
   with arrow keys and Enter; each result opens the exact record. On phones, search opens from a magnifier button.
 - **Settings → Security** lists recent sign-ins and security events.

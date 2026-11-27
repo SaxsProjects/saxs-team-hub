@@ -125,7 +125,7 @@ export function FounderSettings() {
                 </SettingRow>
                 <p className="field-hint">
                   {canEdit
-                    ? "These print on quotations, invoices, receipts and statements. Every change is recorded, and bank changes are emailed to you."
+                    ? "These print on quotations, invoices, receipts and statements. Changes need your password, are recorded and are emailed to you."
                     : "Turn on two-factor authentication to edit company details."}
                 </p>
               </>
@@ -262,11 +262,11 @@ function CompanyDialog({ bank, current, onClose, onDone }: { bank: boolean; curr
   const [error, setError] = useState<unknown>(null);
   const fields = bank ? BANK_FIELDS : COMPANY_FIELDS;
   const save = useMutation({
-    mutationFn: () => api<CompanyDetails>("/api/company", { method: "PUT", body: JSON.stringify({ ...form, current_password: bank ? password : undefined }) }),
+    mutationFn: () => api<CompanyDetails>("/api/company", { method: "PUT", body: JSON.stringify({ ...form, current_password: password }) }),
     onSuccess: (data) => {
       qc.setQueryData(["company"], data);
       qc.invalidateQueries({ queryKey: ["finance", "readiness"] });
-      onDone(bank ? "Banking details saved. A confirmation email is on its way to you." : "Company details saved.");
+      onDone(`${bank ? "Banking" : "Company"} details saved. A confirmation email is on its way to you.`);
     },
     onError: setError,
   });
@@ -274,7 +274,7 @@ function CompanyDialog({ bank, current, onClose, onDone }: { bank: boolean; curr
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!bank && form.company_legal_name.trim().length < 2) return setError("Enter the company’s registered name.");
-    if (bank && !password) return setError("Enter your current password to change banking details.");
+    if (!password) return setError("Enter your current password to save these changes.");
     setError(null);
     save.mutate();
   }
@@ -311,18 +311,16 @@ function CompanyDialog({ bank, current, onClose, onDone }: { bank: boolean; curr
             )}
           </Field>
         ))}
-        {bank && (
-          <Field id="co-password" label="Your current password">
-            <input
-              id="co-password"
-              className="input"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-        )}
+        <Field id="co-password" label="Your current password" hint="Needed for any change: these details tell clients how to pay you.">
+          <input
+            id="co-password"
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
         <FormError error={error} />
         <div className="form-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>

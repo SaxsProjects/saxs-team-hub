@@ -99,8 +99,9 @@ Production refuses to start without the signature, and the app checks the image 
 
 These variables are the starting values. The founder can change all of them except the trading name and the
 signature image in **Settings → Company** (`GET/PUT /api/company`, `app/company.py`): founder only, two-factor
-required, the current password for any banking change, every change audited (account numbers masked) and a bank
-change emailed to `ADMIN_NOTIFY_EMAIL` at once. Saved values are stored encrypted in `company_profile` and win
+required, the current password for every change (bank account, accounts email and registered name all steer
+client payments), every change audited (account numbers masked) and
+emailed to `ADMIN_NOTIFY_EMAIL` at once. Saved values are stored encrypted in `company_profile` and win
 over the variables. `GET /api/finance/readiness` lists anything still missing.
 
 `GET /api/audit?scope=workspace` returns business activity only; `scope=account` returns sign-ins, security

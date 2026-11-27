@@ -38,7 +38,9 @@ def test_needs_two_factor(client, admin):
 
 def test_saved_details_win_and_are_audited(client, admin):
     _two_factor_on()
-    r = client.put("/api/company", headers=admin, json=DETAILS)
+    assert client.put("/api/company", headers=admin, json=DETAILS).status_code == 400  # password needed for any change
+    emailer.outbox.clear()
+    r = client.put("/api/company", headers=admin, json={**DETAILS, "current_password": ADMIN_PASSWORD})
     assert r.status_code == 200, r.text
     assert r.json()["company_registration_number"] == "2026/941760/07"
     with SessionLocal() as db:
@@ -49,6 +51,8 @@ def test_saved_details_win_and_are_audited(client, admin):
     events = client.get("/api/audit?scope=workspace", headers=admin).json()
     update = next(e for e in events if e["action"] == "company.update")
     assert update["after"]["company_registration_number"] == "2026/941760/07"
+    alert = next(m for m in emailer.outbox if m.subject == "Company details changed")
+    assert "registration number" in alert.text
 
 
 def test_bad_values_are_refused(client, admin):
@@ -76,9 +80,8 @@ def test_bank_change_needs_password_masks_and_alerts(client, admin):
     assert "•••• 7890" in alert.text and "1234567890" not in alert.text
     update = next(e for e in client.get("/api/audit", headers=admin).json() if e["action"] == "company.update")
     assert update["after"]["company_bank_account_number"] == "•••• 7890"
-    # Non-bank edits don't ask for the password again.
-    r = client.put("/api/company", headers=admin, json={**bank, "company_phone": "0820000000"})
-    assert r.status_code == 200
+    # The accounts email steers proof of payment, so it needs the password too.
+    assert client.put("/api/company", headers=admin, json={**bank, "company_email": "evil@example.com"}).status_code == 400
 
 
 def test_audit_scopes_split_account_events_from_workspace(client, admin):

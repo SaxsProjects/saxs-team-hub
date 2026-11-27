@@ -2,8 +2,9 @@
 
 Safeguards, because a changed bank account on an invoice is how invoice fraud works:
 - founder only, with two-factor turned on;
-- changing any banking detail needs the founder's current password;
-- every change is audited (bank account numbers masked), and a bank change emails the founder at once.
+- every change needs the founder's current password: the bank account, the accounts email (where proof of
+  payment goes) and the registered name (printed as the account holder) all steer client payments;
+- every change is audited (bank account numbers masked) and emailed to the founder at once.
 """
 
 import re
@@ -122,12 +123,10 @@ def update_company(body: CompanyIn, db: Session = Depends(get_db), user: User = 
     changed = [k for k in EDITABLE if new[k] != getattr(before, k)]
     if not changed:
         return before
-    bank_changed = [k for k in changed if k in BANK_FIELDS]
-    if bank_changed:
-        if not body.current_password:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter your current password to change banking details")
-        if not verify_password(user.password_hash, body.current_password):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "That password is not right")
+    if not body.current_password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter your current password to change company details")
+    if not verify_password(user.password_hash, body.current_password):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "That password is not right")
     save_values(db, new, user.email)
     audit(
         db,
@@ -139,13 +138,15 @@ def update_company(body: CompanyIn, db: Session = Depends(get_db), user: User = 
         after={k: _mask(k, new[k]) for k in changed},
     )
     db.commit()
-    if bank_changed:
-        account = _mask("company_bank_account_number", new["company_bank_account_number"])
-        notify_admin(
-            "Company banking details changed",
-            "The banking details printed on your invoices were changed in the Team Hub by "
-            f"{user.email}. New account: {new['company_bank_name']} {account}, "
-            f"branch {new['company_bank_branch_code']}.\n\n"
-            "If you did not make this change, sign in, change your password and set the banking details back at once.",
-        )
+    labels = ", ".join(k.removeprefix("company_").replace("_", " ") for k in changed)
+    bank_changed = any(k in BANK_FIELDS for k in changed)
+    account = _mask("company_bank_account_number", new["company_bank_account_number"])
+    bank_line = f"Bank account now: {new['company_bank_name']} {account}, branch {new['company_bank_branch_code']}.\n"
+    notify_admin(
+        "Company banking details changed" if bank_changed else "Company details changed",
+        f"The company details printed on your quotations and invoices were changed in the Team Hub by {user.email}.\n\n"
+        f"Changed: {labels}.\n"
+        + (bank_line if bank_changed else "")
+        + "\nIf you did not make this change, sign in, change your password and set the details back at once.",
+    )
     return _current(db)
