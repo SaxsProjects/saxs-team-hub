@@ -4,6 +4,14 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.4.2] - 2026-11-27
+
+### Fixed
+- Audit history, the bell and recent activity now name every event in plain English (for example
+  "Password reset requested" and "Old sign-in pass reused; session ended"); security events are marked amber.
+- Notification switches that are off are easier to see.
+- Founder settings show the founder's name instead of "Founder".
+
 ## [1.4.1] - 2026-11-27
 
 ### Added

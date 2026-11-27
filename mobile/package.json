@@ -1,7 +1,7 @@
 {
   "name": "saxs-team-hub-android",
   "private": true,
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "SaxsProjects Team Hub Android app: opens the live Team Hub (hub.saxsprojects.co.za).",
   "scripts": {
     "sync": "cap sync android",

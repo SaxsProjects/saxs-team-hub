@@ -51,7 +51,7 @@ export function FounderSettings() {
           </div>
           <div className="form-card">
             <Field id="s-name" label="Full name">
-              <input id="s-name" className="input" readOnly value={me?.full_name ?? "Founder"} />
+              <input id="s-name" className="input" readOnly value={me?.full_name ?? "Phathutshedzo Mamagau"} />
             </Field>
             <Field id="s-email" label="Email address">
               <input id="s-email" className="input" readOnly value={me?.email ?? ""} />
