@@ -319,3 +319,19 @@ def test_passkey_setup_on_an_untrusted_device_is_not_a_sign_out(client):
     r = client.post("/api/auth/passkeys/options", headers={**ORIGIN, **headers})
     assert r.status_code == 409  # a 401 would make the app sign the person out
     assert client.get("/api/auth/me", headers=headers).status_code == 200
+
+
+def test_device_names():
+    from starlette.requests import Request
+
+    from app.devices import device_name
+
+    def named(ua: str) -> str:
+        return device_name(Request({"type": "http", "headers": [(b"user-agent", ua.encode())]}))
+
+    assert (
+        named("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0.0.0 Edg/140.0.0.0 TeamHubDesktop/1.8.0")
+        == "Team Hub Windows app"
+    )
+    assert named("Mozilla/5.0 (iPhone; CPU iPhone OS 19_0) Version/19.0 Mobile Safari/604.1") == "Safari on iPhone"
+    assert named("Mozilla/5.0 (Windows NT 10.0) Chrome/140.0 Safari/537.36 Edg/140.0") == "Edge on Windows"

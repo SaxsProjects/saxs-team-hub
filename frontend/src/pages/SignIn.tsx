@@ -9,8 +9,8 @@ import { cancelled, unlockName } from "../lib/passkey";
 
 /** Phones and the installed apps are personal devices: keep them signed in unless the person says no. */
 function personalDevice(): boolean {
-  const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean }; __TAURI_INTERNALS__?: unknown };
-  return !!w.Capacitor?.isNativePlatform?.() || !!w.__TAURI_INTERNALS__ || /Android|iPhone|iPad/.test(navigator.userAgent);
+  const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } };
+  return !!w.Capacitor?.isNativePlatform?.() || /Android|iPhone|iPad|TeamHubDesktop\//.test(navigator.userAgent);
 }
 
 /** Sign in. A trusted device gets the "Welcome back" unlock screen; anyone else the full sign-in. */

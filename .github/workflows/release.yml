@@ -10,7 +10,50 @@ permissions:
   contents: write
 
 jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag matches the product version
+        working-directory: .
+        run: bash .github/scripts/check-versions.sh "$GITHUB_REF_NAME"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: npm ci
+      - name: Build the Windows installers and the signed update files
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npx tauri build --ci
+          else
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY not set; installers are built but the app can't update itself from this release"
+            npx tauri build --ci --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
+          v="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          cp src-tauri/target/release/bundle/msi/*.msi "out/saxs-team-hub-windows-$v.msi"
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe "out/saxs-team-hub-windows-$v-setup.exe"
+          for f in src-tauri/target/release/bundle/msi/*.msi.sig; do [ -e "$f" ] && cp "$f" "out/saxs-team-hub-windows-$v.msi.sig"; done
+          for f in src-tauri/target/release/bundle/nsis/*-setup.exe.sig; do [ -e "$f" ] && cp "$f" "out/saxs-team-hub-windows-$v-setup.exe.sig"; done
+          ls -l out
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: desktop/out/
+          if-no-files-found: error
+
   release:
+    needs: windows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -54,13 +97,21 @@ jobs:
           ./gradlew assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk "../../dist/saxs-team-hub-android-${GITHUB_REF_NAME#v}.apk"
           rm -f "$ANDROID_KEYSTORE_PATH"
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows
+          path: windows
       - name: Package
         run: |
           v="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           (cd frontend/dist && zip -qr "../../dist/saxs-team-hub-web-$v.zip" .)
           git archive --format=zip --prefix="saxs-team-hub-api-$v/" -o "dist/saxs-team-hub-api-$v.zip" HEAD backend render.yaml VERSION CHANGELOG.md
-          (cd dist && sha256sum ./*.zip ./*.apk 2>/dev/null > SHA256SUMS.txt || sha256sum ./*.zip > SHA256SUMS.txt)
+          cp windows/*.msi windows/*-setup.exe dist/
+          if [ -e "windows/saxs-team-hub-windows-$v-setup.exe.sig" ]; then
+            python3 .github/scripts/updater-manifest.py "$v" windows "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" > dist/latest.json
+          fi
+          (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - name: Release notes from the changelog
         run: |
           v="${GITHUB_REF_NAME#v}"
