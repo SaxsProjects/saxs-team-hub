@@ -1,8 +1,8 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { Check, Clock, Download, Plus, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { Check, Clock, Eye, Plus, type LucideIcon } from "lucide-react";
 import { Link } from "react-router";
-import { api, downloadFile } from "../api/client";
+import { api } from "../api/client";
+import { useViewFile } from "../components/DocumentPreview";
 import type { AuditEntry, Dashboard, Project, TaskOrder } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ErrorNote, Skeleton, StatCard } from "../components/ui";
@@ -327,20 +327,9 @@ function Attention({ item }: { item: AttentionItem }) {
 }
 
 function PayoutsReady({ dash }: { dash: Dashboard | undefined }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const view = useViewFile();
   const count = dash?.payouts.due_now_count ?? 0;
-  async function download() {
-    setBusy(true);
-    setError(null);
-    try {
-      await downloadFile("/api/payment-list.csv", `payment-list-${dash?.today ?? "today"}.csv`);
-    } catch (e) {
-      setError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const download = () => view("/api/payment-list.csv", `payment-list-${dash?.today ?? "today"}.csv`, "Payment list");
   return (
     <section className="card payouts-card">
       <h3 className="card-title">Payouts ready</h3>
@@ -349,11 +338,10 @@ function PayoutsReady({ dash }: { dash: Dashboard | undefined }) {
       </p>
       <p className="payouts-value num">{dash ? rands(dash.payouts.due_now_cents) : <Skeleton w={150} h={36} />}</p>
       <span className="chip chip-success">{plural(dash?.payouts.payment_requested_count ?? 0, "payment request")}</span>
-      <button className="btn btn-primary btn-block payouts-btn" onClick={download} disabled={busy || count === 0}>
-        <span>{busy ? "Preparing…" : "Download payment list"}</span>
-        <Download size={20} aria-hidden="true" />
+      <button className="btn btn-primary btn-block payouts-btn" onClick={download} disabled={count === 0}>
+        <span>View payment list</span>
+        <Eye size={20} aria-hidden="true" />
       </button>
-      {!!error && <ErrorNote error={error} />}
     </section>
   );
 }

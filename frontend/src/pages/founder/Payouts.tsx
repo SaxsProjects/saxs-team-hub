@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { api, downloadFile, post } from "../../api/client";
+import { api, post } from "../../api/client";
+import { useViewFile } from "../../components/DocumentPreview";
 import type { Dashboard, Payout, Project } from "../../api/types";
 import { Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, RowButton, Skeleton, StatCard, Tabs, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, plural, rands, shortDate, shortDay, todaySA } from "../../lib/format";
@@ -25,6 +26,7 @@ function addDays(day: string, n: number): string {
 }
 
 export function Payouts() {
+  const view = useViewFile();
   const qc = useQueryClient();
   const payouts = useQuery({ queryKey: ["payouts"], queryFn: () => api<Payout[]>("/api/payouts") });
   const projects = useQuery({ queryKey: ["projects"], queryFn: () => api<Project[]>("/api/projects") });
@@ -53,14 +55,7 @@ export function Payouts() {
   const source = (p: Payout) => (p.kind === "task_fee" ? `Task fee · ${calc(p).task_order ?? ""}` : (projectName.get(p.project_id ?? -1) ?? "Project share"));
   const nextOf = (list: Payout[]) => list.map((p) => p.due_at).filter(Boolean).sort()[0];
 
-  async function exportList() {
-    setFailed(null);
-    try {
-      await downloadFile("/api/payment-list.csv", `payment-list-${today}.csv`);
-    } catch (e) {
-      setFailed(e);
-    }
-  }
+  const exportList = () => (setFailed(null), view("/api/payment-list.csv", `payment-list-${today}.csv`, "Payment list"));
 
   return (
     <div className="page">
@@ -193,8 +188,9 @@ export function Payouts() {
   );
 }
 
-function RecordEft({ payout: p, name, source, today, onPaid, onFailed }: { payout: Payout; name: string; source: string; today: string; onPaid: (p: Payout) => void; onFailed: (e: unknown) => void }) {
+function RecordEft({ payout: p, name, source, today, onPaid }: { payout: Payout; name: string; source: string; today: string; onPaid: (p: Payout) => void; onFailed: (e: unknown) => void }) {
   const [ref, setRef] = useState("");
+  const view = useViewFile();
   const [error, setError] = useState<unknown>(null);
   const pay = useMutation({
     mutationFn: () => post<Payout>(`/api/payouts/${p.id}/paid`, { eft_reference: ref.trim() }),
@@ -250,7 +246,7 @@ function RecordEft({ payout: p, name, source, today, onPaid, onFailed }: { payou
           </Field>
           <FormError error={error} />
           <div className="detail-actions" style={{ marginTop: 4 }}>
-            <button type="button" className="btn btn-secondary" onClick={() => downloadFile(statementPath(p), `${p.statement_number}.pdf`).catch(onFailed)}>
+            <button type="button" className="btn btn-secondary" onClick={() => view(statementPath(p), `${p.statement_number}.pdf`, `Payout statement ${p.statement_number}`)}>
               View statement
             </button>
             <button className="btn btn-primary" disabled={pay.isPending}>
@@ -261,7 +257,7 @@ function RecordEft({ payout: p, name, source, today, onPaid, onFailed }: { payou
       )}
       {p.paid_at && (
         <div className="detail-actions">
-          <button className="btn btn-secondary" onClick={() => downloadFile(statementPath(p), `${p.statement_number}.pdf`).catch(onFailed)}>
+          <button className="btn btn-secondary" onClick={() => view(statementPath(p), `${p.statement_number}.pdf`, `Payout statement ${p.statement_number}`)}>
             View statement
           </button>
         </div>

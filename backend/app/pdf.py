@@ -336,8 +336,19 @@ def invoice_pdf(inv, *, draft: bool, company: Settings | None = None) -> bytes:
     return bytes(doc.output())
 
 
-def receipt_pdf(receipt, invoice, *, company: Settings | None = None) -> bytes:
-    doc = _Doc(f"RECEIPT {receipt.number}", company=company)
+PREVIEW_MARK = "PREVIEW - NOT ISSUED"
+
+
+def _preview_footer(doc: "_Doc") -> None:
+    """Previews are never signed: the signature and the number are added only when the document is issued."""
+    doc.ln(6)
+    doc.para("Preview only. The number, date and signature are added when it is issued.", size=9)
+
+
+def receipt_pdf(receipt, invoice, *, company: Settings | None = None, preview: bool = False) -> bytes:
+    doc = _Doc(
+        "RECEIPT" if preview else f"RECEIPT {receipt.number}", watermark=PREVIEW_MARK if preview else None, company=company
+    )
     doc.company_details()
     doc.row("Receipt number", receipt.number)
     doc.row("Date issued", _d(receipt.issue_date))
@@ -349,12 +360,17 @@ def receipt_pdf(receipt, invoice, *, company: Settings | None = None) -> bytes:
     doc.row("For invoice", f"{invoice.number} - {invoice.title}")
     doc.row("Invoice total", format_zar(invoice.total_cents))
     doc.row("Balance outstanding", format_zar(invoice.balance_cents), bold=True)
-    doc.signature_block("Received by", receipt.issue_date)
+    if preview:
+        _preview_footer(doc)
+    else:
+        doc.signature_block("Received by", receipt.issue_date)
     return bytes(doc.output())
 
 
-def credit_note_pdf(note, invoice, *, company: Settings | None = None) -> bytes:
-    doc = _Doc(f"CREDIT NOTE {note.number}", company=company)
+def credit_note_pdf(note, invoice, *, company: Settings | None = None, preview: bool = False) -> bytes:
+    doc = _Doc(
+        "CREDIT NOTE" if preview else f"CREDIT NOTE {note.number}", watermark=PREVIEW_MARK if preview else None, company=company
+    )
     doc.company_details()
     doc.row("Credit note number", note.number)
     doc.row("Date", _d(note.issue_date))
@@ -364,7 +380,10 @@ def credit_note_pdf(note, invoice, *, company: Settings | None = None) -> bytes:
     doc.row("Amount credited", format_zar(note.amount_cents), bold=True)
     doc.row("Reason", note.reason)
     doc.row("Balance now due", format_zar(invoice.balance_cents), bold=True)
-    doc.signature_block("Issued by", note.issue_date)
+    if preview:
+        _preview_footer(doc)
+    else:
+        doc.signature_block("Issued by", note.issue_date)
     return bytes(doc.output())
 
 

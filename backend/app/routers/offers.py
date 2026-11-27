@@ -1,10 +1,11 @@
 """Offers: admin side (create, attach PDF, send, revoke) and the candidate's public link."""
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -185,24 +186,70 @@ def send_offer(offer_id: int, background: BackgroundTasks, db: Session = Depends
     )
     db.commit()
 
-    settings = get_settings()
     offer_link = link(f"/offer/{token}")
     background.add_task(
         send_email,
-        OutgoingEmail(
-            to=offer.person.email,
-            subject=f"Your offer from {settings.company_name}: {offer.role} ({offer.reference})",
-            text=(
-                f"Hi {offer.person.full_name},\n\n"
-                f"{settings.company_name} would like to offer you the role of {offer.role}.\n\n"
-                f"Read the offer and accept or decline here (this link is personal to you):\n{offer_link}\n\n"
-                f"Please respond by {offer.deadline:%d %B %Y}.\n\n"
-                f"Kind regards,\n{settings.company_name}"
-            ),
-            reply_to=settings.admin_notify_email or None,
-        ),
+        offer_email(offer.person.email, offer.person.full_name, offer.role, offer.reference, offer.deadline, offer_link),
     )
     return offer_out(offer, OfferSentOut, offer_link=offer_link)
+
+
+def offer_email(to: str, name: str, role: str, reference: str, deadline: date, offer_link: str) -> OutgoingEmail:
+    """The email a candidate receives; the preview below uses the same text so what you see is what is sent."""
+    settings = get_settings()
+    return OutgoingEmail(
+        to=to,
+        subject=f"Your offer from {settings.company_name}: {role} ({reference})",
+        text=(
+            f"Hi {name},\n\n"
+            f"{settings.company_name} would like to offer you the role of {role}.\n\n"
+            f"Read the offer and accept or decline here (this link is personal to you):\n{offer_link}\n\n"
+            f"Please respond by {deadline:%d %B %Y}.\n\n"
+            f"Kind regards,\n{settings.company_name}"
+        ),
+        reply_to=settings.admin_notify_email or None,
+    )
+
+
+class OfferEmailPreviewIn(BaseModel):
+    person_id: int
+    role: str = Field(min_length=2, max_length=120)
+    deadline: date
+
+
+class OfferEmailPreviewOut(BaseModel):
+    to: str
+    subject: str
+    text: str
+
+
+@router.post("/offers/email-preview", response_model=OfferEmailPreviewOut)
+def preview_offer_email(body: OfferEmailPreviewIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """The email the candidate will get, before anything is saved or sent."""
+    person = db.get(Person, body.person_id)
+    if not person:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Person not found")
+    msg = offer_email(
+        person.email,
+        person.full_name,
+        body.role.strip(),
+        "reference given when sent",
+        body.deadline,
+        "(their personal link is created when you send)",
+    )
+    return OfferEmailPreviewOut(to=msg.to, subject=msg.subject, text=msg.text)
+
+
+@router.get("/offers/{offer_id}/pdf")
+def admin_offer_pdf(offer_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """The proposal PDF attached to an offer, for the founder to look at."""
+    offer = get_offer(db, offer_id)
+    doc = offer.pdf_document
+    if not doc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No proposal PDF is attached to this offer yet")
+    return Response(
+        doc.content, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{offer.reference}.pdf"'}
+    )
 
 
 @router.post("/offers/{offer_id}/revoke", response_model=OfferOut)

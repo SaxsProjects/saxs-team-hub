@@ -8,6 +8,7 @@ import { BrowserRouter } from "react-router";
 import { ApiError } from "./api/client";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { PreviewProvider } from "./components/DocumentPreview";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +26,9 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <PreviewProvider>
+            <App />
+          </PreviewProvider>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

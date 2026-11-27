@@ -72,19 +72,30 @@ const FOCUSABLE =
  * inside, closes on Escape or a backdrop click, stops the page behind from scrolling, and gives focus
  * back to whatever opened it.
  */
-export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+/** Open dialogs, newest last: only the top one answers Escape and keeps Tab inside it. */
+const openDialogs: object[] = [];
+let pageOverflow = "";
+
+export function Dialog({ title, onClose, children, className, hideTitle }: { title: string; onClose: () => void; children: ReactNode; className?: string; hideTitle?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
   useEffect(() => {
+    const me = {};
+    // The page behind stays still while any dialog is open, whichever order they close in.
+    if (openDialogs.push(me) === 1) {
+      pageOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    }
     const opener = document.activeElement as HTMLElement | null;
     const box = ref.current;
     if (box && !box.contains(document.activeElement)) {
-      const first = box.querySelector<HTMLElement>("[autofocus]") ?? box.querySelector<HTMLElement>(FOCUSABLE);
+      const first = box.querySelector<HTMLElement>("[autofocus], [data-autofocus]") ?? box.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? box).focus();
     }
     const onKey = (e: KeyboardEvent) => {
+      if (openDialogs[openDialogs.length - 1] !== me) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         closeRef.current();
@@ -103,19 +114,18 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
       }
     };
     document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
+      openDialogs.splice(openDialogs.indexOf(me), 1);
+      if (openDialogs.length === 0) document.body.style.overflow = pageOverflow;
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = overflow;
       if (opener && document.contains(opener)) opener.focus();
     };
   }, []);
 
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
-        <h3 className="dialog-title">{title}</h3>
+      <div className={`dialog ${className ?? ""}`} role="dialog" aria-modal="true" aria-label={title} ref={ref} tabIndex={-1}>
+        {!hideTitle && <h3 className="dialog-title">{title}</h3>}
         {children}
       </div>
     </div>

@@ -200,13 +200,39 @@ export function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 /** Fetch a protected file (picture, PDF, CSV) as a blob, since <img>/<a> can't send the sign-in pass. */
-export async function apiBlob(path: string): Promise<Blob> {
-  return (await send(path)).blob();
+export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  return (await send(path, init)).blob();
 }
 
-/** Download a protected file under a given name. */
-export async function downloadFile(path: string, filename: string): Promise<void> {
-  const url = URL.createObjectURL(await apiBlob(path));
+/** The Android app's own file saver (MainActivity registers it); absent in a normal browser. */
+interface NativeBridge {
+  isNativePlatform?: () => boolean;
+  nativePromise?: (plugin: string, method: string, options: Record<string, unknown>) => Promise<{ location?: string }>;
+}
+function nativeBridge(): NativeBridge | null {
+  const cap = (window as unknown as { Capacitor?: NativeBridge }).Capacitor;
+  return cap?.isNativePlatform?.() && cap.nativePromise ? cap : null;
+}
+
+async function toBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/**
+ * Save a file the person has already looked at. Browsers download it; the Android app can't download
+ * from a web page, so it hands the file to the app, which saves it in Downloads.
+ * Returns where it went, for the confirmation message.
+ */
+export async function saveBlob(blob: Blob, filename: string): Promise<string> {
+  const native = nativeBridge();
+  if (native?.nativePromise) {
+    const r = await native.nativePromise("TeamHubFiles", "save", { data: await toBase64(blob), filename, mimeType: blob.type || "application/octet-stream" });
+    return r.location ?? "Downloads";
+  }
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -215,4 +241,10 @@ export async function downloadFile(path: string, filename: string): Promise<void
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  return "your downloads";
+}
+
+/** Download a protected file under a given name. */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  await saveBlob(await apiBlob(path), filename);
 }

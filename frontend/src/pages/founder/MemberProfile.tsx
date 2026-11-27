@@ -1,8 +1,9 @@
+import { useViewFile } from "../../components/DocumentPreview";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, FileText, Lock } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
-import { ApiError, api, downloadFile, post } from "../../api/client";
+import { ApiError, api, post } from "../../api/client";
 import type { DocumentInfo, MaskedBanking, OnboardingItem, Payout, Person, PersonStage, Pipeline, RatePeriod } from "../../api/types";
 import { Dialog, Done, ErrorNote, Field, FormError, Skeleton } from "../../components/ui";
 import { fullDay, percent, rands, shortDay, todaySA } from "../../lib/format";
@@ -46,6 +47,7 @@ export function MemberProfile() {
   const [editing, setEditing] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [failed, setFailed] = useState<unknown>(null);
+  const view = useViewFile();
 
   const refresh = () => {
     for (const k of [["person", id], ["people"], ["pipeline"], ["dashboard"]]) qc.invalidateQueries({ queryKey: k });
@@ -241,8 +243,8 @@ export function MemberProfile() {
                   {d.filename} · {shortDay(d.created_at)}
                 </p>
               </div>
-              <button className="link-btn" onClick={() => downloadFile(`/api/documents/${d.id}`, d.filename).catch(setFailed)}>
-                Download
+              <button className="link-btn" onClick={() => view(`/api/documents/${d.id}`, d.filename, DOC_TITLE[d.kind] ?? d.filename)}>
+                View
               </button>
             </li>
           ))}

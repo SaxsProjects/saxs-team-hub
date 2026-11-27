@@ -11,6 +11,7 @@ Rules:
 """
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -520,15 +521,7 @@ def invoice_pdf_file(invoice_id: int, db: Session = Depends(get_db), _: User = D
     return _pdf_response(invoice_pdf(inv, draft=True, company=company_settings(db)), f"invoice-draft-{inv.id}.pdf")
 
 
-@router.post("/invoices/{invoice_id}/payments", response_model=InvoicePaymentOut, status_code=201)
-def record_invoice_payment(
-    invoice_id: int, body: InvoicePaymentIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)
-):
-    """Record money received against an invoice: issues a signed receipt and triggers contributor payouts."""
-    from ..terms import release_deferred_fees
-    from .projects import record_client_payment
-
-    inv = get_invoice(db, invoice_id)
+def _check_payment(inv: Invoice, body: InvoicePaymentIn) -> None:
     if inv.status not in ("issued", "part_paid"):
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"Payments can only be recorded on an issued, unpaid invoice (it is {inv.status})"
@@ -539,6 +532,71 @@ def record_invoice_payment(
         )
     if body.received_on > today_local():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The payment date cannot be in the future")
+
+
+def _check_credit(inv: Invoice, body: CreditNoteIn) -> None:
+    if inv.status not in ("issued", "part_paid"):
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Credit notes apply to issued, unpaid invoices (it is {inv.status})")
+    if body.amount_cents > inv.balance_cents:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"The credit is more than the balance due ({inv.balance_cents / 100:.2f})"
+        )
+
+
+def _invoice_after(inv: Invoice, less_cents: int) -> SimpleNamespace:
+    """A read-only stand-in for the invoice as it will look once this payment or credit is applied.
+    Plain attributes (not a model instance), so a preview can never be flushed into the database."""
+    return SimpleNamespace(
+        number=inv.number,
+        title=inv.title,
+        issue_date=inv.issue_date,
+        client=inv.client,
+        total_cents=inv.total_cents,
+        balance_cents=inv.balance_cents - less_cents,
+    )
+
+
+@router.post("/invoices/{invoice_id}/payments/preview")
+def preview_invoice_payment(
+    invoice_id: int, body: InvoicePaymentIn, db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
+    """The receipt this payment would issue, watermarked and unsigned. Nothing is saved."""
+    inv = get_invoice(db, invoice_id)
+    _check_payment(inv, body)
+    receipt = SimpleNamespace(
+        number="(numbered when issued)",
+        issue_date=today_local(),
+        amount_cents=body.amount_cents,
+        received_on=body.received_on,
+        method=body.method,
+        reference=body.reference.strip(),
+    )
+    pdf = receipt_pdf(receipt, _invoice_after(inv, body.amount_cents), company=company_settings(db), preview=True)
+    return _pdf_response(pdf, f"receipt-preview-{inv.number}.pdf")
+
+
+@router.post("/invoices/{invoice_id}/credit-notes/preview")
+def preview_credit_note(invoice_id: int, body: CreditNoteIn, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """The credit note this would issue, watermarked and unsigned. Nothing is saved."""
+    inv = get_invoice(db, invoice_id)
+    _check_credit(inv, body)
+    note = SimpleNamespace(
+        number="(numbered when issued)", issue_date=today_local(), amount_cents=body.amount_cents, reason=body.reason.strip()
+    )
+    pdf = credit_note_pdf(note, _invoice_after(inv, body.amount_cents), company=company_settings(db), preview=True)
+    return _pdf_response(pdf, f"credit-note-preview-{inv.number}.pdf")
+
+
+@router.post("/invoices/{invoice_id}/payments", response_model=InvoicePaymentOut, status_code=201)
+def record_invoice_payment(
+    invoice_id: int, body: InvoicePaymentIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)
+):
+    """Record money received against an invoice: issues a signed receipt and triggers contributor payouts."""
+    from ..terms import release_deferred_fees
+    from .projects import record_client_payment
+
+    inv = get_invoice(db, invoice_id)
+    _check_payment(inv, body)
     _require(db, readiness(db).can_issue_quotations, "receipts are signed")
 
     payouts = []
@@ -591,12 +649,7 @@ def record_invoice_payment(
 def issue_credit_note(invoice_id: int, body: CreditNoteIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     """Reduce what the client owes on an issued invoice (the invoice itself is never edited)."""
     inv = get_invoice(db, invoice_id)
-    if inv.status not in ("issued", "part_paid"):
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Credit notes apply to issued, unpaid invoices (it is {inv.status})")
-    if body.amount_cents > inv.balance_cents:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, f"The credit is more than the balance due ({inv.balance_cents / 100:.2f})"
-        )
+    _check_credit(inv, body)
     _require(db, readiness(db).can_issue_quotations, "credit notes are signed")
     inv.credited_cents += body.amount_cents
     _refresh_invoice_status(inv)

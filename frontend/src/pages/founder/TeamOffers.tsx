@@ -1,3 +1,4 @@
+import { usePreview, type PreviewEmail } from "../../components/DocumentPreview";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
@@ -160,6 +161,7 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
   const [error, setError] = useState<unknown>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const person = candidates.find((p) => String(p.id) === f.person_id);
+  const preview = usePreview();
 
   const save = useMutation({
     mutationFn: async (send: boolean) => {
@@ -190,7 +192,16 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
       if (send && !file) return setError("Attach the proposal PDF before sending.");
       if (file && (file.type !== "application/pdf" || file.size > 10 * 1024 * 1024)) return setError("The proposal must be a PDF under 10 MB.");
       setError(null);
-      save.mutate(send);
+      if (!send || !file) return save.mutate(send);
+      // Nothing is emailed until the founder has seen the proposal and the exact email.
+      preview({
+        title: `Offer for ${person?.full_name ?? "the candidate"}`,
+        filename: file.name,
+        load: async () => file,
+        email: () => post<PreviewEmail>("/api/offers/email-preview", { person_id: Number(f.person_id), role: f.role.trim(), deadline: f.deadline }),
+        note: "This is the email and the proposal they will get. Their personal link and the offer reference are created when you send.",
+        confirm: { label: "Send offer", run: () => save.mutateAsync(true) },
+      });
     };
   }
 
@@ -244,7 +255,7 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
         <FormError error={error} />
         <div className="form-row" style={{ gap: 10 }}>
           <button className="btn btn-primary" disabled={save.isPending}>
-            {save.isPending ? "Working…" : "Send offer"}
+            {save.isPending ? "Working…" : "Preview and send"}
           </button>
           <button type="button" className="btn btn-secondary" disabled={save.isPending} onClick={() => submit(false)()}>
             Save draft
