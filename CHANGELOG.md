@@ -4,6 +4,28 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.4.0] - 2026-11-27
+
+### Added
+- Founder screens, built to the Figma design and matching the team member screens:
+  - **Team & offers**: team stats, the offer pipeline (sent, viewed, accepted), the team directory, add a person,
+    and draft or send an offer with its proposal PDF.
+  - **Member profile**: onboarding checklist with founder confirmations, stage moves, masked banking details with an
+    audited reveal, written rate reviews and the member's documents.
+  - **Projects** and **project detail**: client money, direct costs and contributors per project; add contributors with
+    work shares, lock shares, record client payments and costs, and download the project's quotations and invoices.
+  - **Task Orders**: the register with filters and paging, review a submission (accept or request changes),
+    cancel open work, and create a new Task Order.
+  - **Client finance**: clients, quotations, invoices, receipts and credit notes, each with totals, search and filters;
+    issue documents, record acceptance, invoice a quotation in full or as a deposit, record payments and issue credit notes.
+  - **Payouts**: due now, requested, upcoming, deferred and paid; record the EFT reference, view statements,
+    the deferred fee schedule and the payment list export.
+  - **Audit history**: search and filter every event, see its full record and export the filtered events as CSV.
+  - **Settings**: profile, company readiness for invoicing, two-factor setup, password change and the founder emails.
+
+### Changed
+- Founder screens load on demand, so team members download less.
+
 ## [1.3.0] - 2026-11-27
 
 ### Added

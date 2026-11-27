@@ -189,3 +189,178 @@ export interface PayoutCalculation {
   previously_allocated_cents?: number;
   payout_cents?: number;
 }
+
+// ---- Founder (admin) shapes -------------------------------------------------------------
+
+export type PersonStage = "draft" | "sent" | "viewed" | "accepted" | "declined" | "expired" | "agreement_signed" | "onboarded";
+
+export interface Offer {
+  id: number;
+  person_id: number;
+  role: string;
+  reference: string;
+  deadline: string;
+  message: string | null;
+  status: "draft" | "sent" | "viewed" | "accepted" | "declined" | "expired" | "revoked";
+  has_pdf: boolean;
+  sent_at: string | null;
+  viewed_at: string | null;
+  responded_at: string | null;
+  token_expires_at: string | null;
+  overdue: boolean;
+}
+
+export interface PipelineCard {
+  person_id: number;
+  full_name: string;
+  email: string;
+  offer: Offer | null;
+}
+
+export interface Pipeline {
+  stages: Record<PersonStage, PipelineCard[]>;
+  overdue_count: number;
+}
+
+export interface Contributor {
+  id: number;
+  person_id: number;
+  work_share_bp: number;
+  rate_bp: number;
+  locked_at: string | null;
+}
+
+export interface ProjectPayment {
+  id: number;
+  amount_cents: number;
+  received_at: string;
+  reference: string;
+}
+
+export interface ProjectCost {
+  id: number;
+  description: string;
+  amount_cents: number;
+  incurred_at: string;
+}
+
+export interface ProjectDetail extends Project {
+  contributors: Contributor[];
+  payments: ProjectPayment[];
+  costs: ProjectCost[];
+  received_cents: number;
+  costs_cents: number;
+  net_income_cents: number;
+}
+
+export interface FounderTaskOrder extends TaskOrder {
+  confirmed_at: string | null;
+  submission_note: string | null;
+  closed_reason: string | null;
+}
+
+export interface Client {
+  id: number;
+  name: string;
+  registration_number: string | null;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  created_at: string;
+}
+
+export interface Line {
+  id: number;
+  position: number;
+  description: string;
+  quantity: number;
+  unit_price_cents: number;
+  line_total_cents: number;
+}
+
+export interface Quotation {
+  id: number;
+  number: string | null;
+  client_id: number;
+  project_id: number | null;
+  title: string;
+  notes: string | null;
+  status: "draft" | "issued" | "accepted" | "declined" | "expired";
+  issue_date: string | null;
+  valid_until: string | null;
+  vat_rate_bp: number;
+  subtotal_cents: number;
+  vat_cents: number;
+  total_cents: number;
+  issued_at: string | null;
+  lines: Line[];
+}
+
+export interface Invoice {
+  id: number;
+  number: string | null;
+  client_id: number;
+  project_id: number | null;
+  quotation_id: number | null;
+  title: string;
+  notes: string | null;
+  status: "draft" | "issued" | "part_paid" | "paid" | "void";
+  issue_date: string | null;
+  due_date: string | null;
+  vat_rate_bp: number;
+  subtotal_cents: number;
+  vat_cents: number;
+  total_cents: number;
+  paid_cents: number;
+  credited_cents: number;
+  balance_cents: number;
+  overdue: boolean;
+  issued_at: string | null;
+  lines: Line[];
+}
+
+export interface Receipt {
+  id: number;
+  number: string;
+  invoice_id: number;
+  amount_cents: number;
+  received_on: string;
+  method: string;
+  reference: string;
+  issue_date: string;
+}
+
+export interface CreditNote {
+  id: number;
+  number: string;
+  invoice_id: number;
+  reason: string;
+  amount_cents: number;
+  issue_date: string;
+}
+
+export interface FinanceReadiness {
+  registration_number_set: boolean;
+  bank_details_set: boolean;
+  signature_set: boolean;
+  signatory_name_set: boolean;
+  vat_registered: boolean;
+  can_issue_quotations: boolean;
+  can_issue_invoices: boolean;
+  missing: string[];
+}
+
+export interface FinanceSummary {
+  invoices_open: number;
+  outstanding_cents: number;
+  overdue_cents: number;
+  received_cents: number;
+  quotations_open: number;
+}
+
+export interface LineInput {
+  description: string;
+  quantity: number;
+  unit_price_cents: number;
+}

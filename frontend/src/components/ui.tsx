@@ -1,4 +1,4 @@
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function Skeleton({ w = "100%", h = 16 }: { w?: number | string; h?: number }) {
@@ -25,15 +25,6 @@ export function StatCard({ label, value, note, noteTone }: { label: string; valu
       <p className="stat-label">{label}</p>
       <p className="stat-value num">{value}</p>
       {note !== undefined && <p className={`stat-note${noteTone === "warning" ? " warning" : ""}`}>{note}</p>}
-    </section>
-  );
-}
-
-export function ComingSoon({ title }: { title: string }) {
-  return (
-    <section className="card empty" style={{ padding: 48 }}>
-      <strong>{title}</strong>
-      This screen is being built and will arrive in the next update.
     </section>
   );
 }
@@ -85,4 +76,107 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
       </div>
     </div>
   );
+}
+
+/** A table row that selects an item on click, Enter or Space. */
+export function RowButton({ selected, onSelect, children }: { selected: boolean; onSelect: () => void; children: ReactNode }) {
+  return (
+    <tr
+      className="selectable"
+      aria-selected={selected}
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onSelect())}
+    >
+      {children}
+    </tr>
+  );
+}
+
+/** Green confirmation line after an action succeeds. */
+export function Done({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <p className="form-ok" role="status">
+      <CheckCircle2 size={16} aria-hidden="true" /> {text}
+    </p>
+  );
+}
+
+/** Label + control + optional hint, stacked. */
+export function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </div>
+  );
+}
+
+/** Empty table body row. */
+export function EmptyRow({ cols, text }: { cols: number; text: string }) {
+  return (
+    <tr>
+      <td colSpan={cols} className="empty">
+        {text}
+      </td>
+    </tr>
+  );
+}
+
+/** Loading table body row. */
+export function LoadingRow({ cols }: { cols: number }) {
+  return (
+    <tr>
+      <td colSpan={cols}>
+        <Skeleton h={48} />
+      </td>
+    </tr>
+  );
+}
+
+/** Message from a failed mutation or validation, shown as an alert. */
+export function FormError({ error }: { error: unknown }) {
+  if (!error) return null;
+  return (
+    <p className="form-error" role="alert">
+      {typeof error === "string" ? error : error instanceof Error ? error.message : "Something went wrong."}
+    </p>
+  );
+}
+
+/** "Showing 6 of 12 · Previous 1 2 Next" under a table. */
+export function Pager({ page, pages, total, shown, noun, onPage }: { page: number; pages: number; total: number; shown: number; noun: string; onPage: (p: number) => void }) {
+  return (
+    <div className="pager">
+      <span>
+        {shown === total ? `${total} ${noun}` : `Showing ${shown} of ${total} ${noun}`}
+      </span>
+      {pages > 1 && (
+        <nav aria-label="Pages" className="pager-nav">
+          <button className="link-btn" disabled={page === 0} onClick={() => onPage(page - 1)}>
+            Previous
+          </button>
+          {Array.from({ length: pages }, (_, i) => (
+            <button key={i} className="link-btn" aria-current={i === page ? "page" : undefined} onClick={() => onPage(i)}>
+              {i + 1}
+            </button>
+          ))}
+          <button className="link-btn" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>
+            Next
+          </button>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+export const PAGE_SIZE = 8;
+
+/** Slice a list for the current page; resets to the last page if the list shrinks. */
+export function paginate<T>(items: T[], page: number, size = PAGE_SIZE): { rows: T[]; pages: number; page: number } {
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const p = Math.min(page, pages - 1);
+  return { rows: items.slice(p * size, p * size + size), pages, page: p };
 }
