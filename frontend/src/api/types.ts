@@ -141,3 +141,51 @@ export interface Person {
   has_sensitive_details: boolean;
   avatar_url: string | null;
 }
+
+export interface RatePeriod {
+  id: number;
+  person_id: number;
+  rate_bp: number;
+  effective_from: string;
+  review_note: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface DocumentInfo {
+  id: number;
+  person_id: number | null;
+  kind: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  sha256: string;
+  version: number;
+  created_at: string;
+}
+
+/** Banking details as the API returns them: account and ID numbers masked to the last digits. */
+export interface MaskedBanking {
+  bank_name: string;
+  account_holder: string;
+  account_number: string;
+  branch_code: string;
+  account_type: string;
+  id_number?: string | null;
+}
+
+/** Revenue-share payouts carry the full calculation; task fees carry the Task Order and its fee. */
+export interface PayoutCalculation {
+  kind?: "task_fee";
+  task_order?: string;
+  fee_cents?: number;
+  fee_terms?: string;
+  received_to_date_cents?: number;
+  costs_to_date_cents?: number;
+  net_income_cents?: number;
+  rate_bp?: number;
+  work_share_bp?: number;
+  earned_to_date_cents?: number;
+  previously_allocated_cents?: number;
+  payout_cents?: number;
+}

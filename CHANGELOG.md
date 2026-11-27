@@ -4,6 +4,18 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.3.0] - 2026-11-27
+
+### Added
+- Team member screens, built to the Figma design:
+  - **My projects**: each project's client money, costs, rate × work share and next payout, project documents and rate history.
+  - **My Task Orders**: filter by status, confirm or decline new work, submit a delivery link and note for review.
+  - **My payouts**: totals, due/upcoming/paid filters, the full calculation behind each amount, payout status,
+    request payment and download the statement PDF.
+  - **My documents**: agreements and statements in one searchable list with PDF download.
+  - **Onboarding**: progress, the checklist, and how to finish each step; members tick the steps they own.
+  - **Settings**: profile, banking details (stored encrypted, shown masked), change password and sign out.
+
 ## [1.2.1] - 2026-11-26
 
 ### Changed
