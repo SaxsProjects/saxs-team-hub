@@ -130,6 +130,8 @@ def request_payment(payout_id: int, db: Session = Depends(get_db), user: User = 
         f"{user.person.full_name} asks to be paid {format_zar(payout.amount_cents)} "
         f"(statement {payout.statement_number}, due {payout.due_at:%d %b %Y}).\n\n"
         "Pay it by EFT from the business account, then mark it as paid in the Team Hub with the EFT reference.",
+        kind="payouts",
+        db=db,
     )
     return payout
 

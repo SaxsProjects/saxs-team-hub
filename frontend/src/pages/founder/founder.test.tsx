@@ -3,7 +3,12 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
+
+vi.mock("../../auth/AuthContext", () => ({
+  useAuth: () => ({ me: { full_name: "Founder", email: "f@example.com", totp_enabled: true }, signOut: vi.fn() }),
+}));
 import { AuditHistory } from "./AuditHistory";
+import { FounderSettings } from "./FounderSettings";
 import { Finance } from "./Finance";
 import { Payouts } from "./Payouts";
 import { TaskOrders } from "./TaskOrders";
@@ -158,5 +163,26 @@ describe("Audit history", () => {
     expect(within(table).queryByText("Payout marked as paid")).not.toBeInTheDocument();
     expect(within(table).getByText("Offer sent")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Event detail" })).toHaveTextContent("offer.send");
+  });
+});
+
+describe("Founder settings", () => {
+  it("switches an email off and saves only after Save changes", async () => {
+    const user = userEvent.setup();
+    const calls = renderPage(<FounderSettings />, {
+      "/api/finance/readiness": { vat_registered: false, registration_number_set: true, bank_details_set: true, signatory_name_set: true, signature_set: true, missing: [] },
+      "/api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: true },
+      "PUT /api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: false },
+    });
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect(save).toBeDisabled();
+    const invoices = await screen.findByRole("switch", { name: "Invoice reminders" });
+    expect(invoices).toHaveAttribute("aria-checked", "true");
+    await user.click(invoices);
+    expect(invoices).toHaveAttribute("aria-checked", "false");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    await user.click(save);
+    await screen.findByText("Notification settings saved.");
+    expect(calls.find((c) => c.method === "PUT")).toMatchObject({ url: "/api/auth/notifications", body: { offers: true, reviews: true, payouts: true, invoices: false } });
   });
 });

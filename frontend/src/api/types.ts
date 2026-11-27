@@ -364,3 +364,10 @@ export interface LineInput {
   quantity: number;
   unit_price_cents: number;
 }
+
+export interface NotificationPrefs {
+  offers: boolean;
+  reviews: boolean;
+  payouts: boolean;
+  invoices: boolean;
+}

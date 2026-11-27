@@ -251,6 +251,8 @@ def expire_offer(db: Session, offer: Offer, actor: str = "system") -> None:
             f"Offer expired: {offer.reference}",
             f"The offer {offer.reference} ({offer.role}) to {offer.person.full_name} passed its deadline "
             f"of {offer.deadline:%d %B %Y} without a response.",
+            kind="offers",
+            db=db,
         )
 
 

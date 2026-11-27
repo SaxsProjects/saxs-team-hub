@@ -1,19 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, post } from "../../api/client";
-import type { FinanceReadiness } from "../../api/types";
+import type { FinanceReadiness, NotificationPrefs } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
 import { Dialog, Done, Field, FormError, PageHead, Skeleton } from "../../components/ui";
 import { PasswordDialog } from "../member/MemberSettings";
 import "../overview.css";
 import "../pages.css";
 
-/** Emails the backend sends to the founder (jobs.py, me.py, offers.py). They can't be switched off yet. */
-const NOTIFICATIONS = [
-  { title: "Offer updates", sub: "Offers that pass their deadline without an answer" },
-  { title: "Task Order reviews", sub: "Submissions waiting past the review deadline" },
-  { title: "Payout reminders", sub: "Payment requests and payouts that are due" },
-  { title: "Invoice reminders", sub: "Invoices past their due date" },
+/** Emails the backend sends to the founder (jobs.py, me.py, offers.py); each can be switched off. */
+const NOTIFICATIONS: { key: keyof NotificationPrefs; title: string; sub: string }[] = [
+  { key: "offers", title: "Offer updates", sub: "Offers that pass their deadline without an answer" },
+  { key: "reviews", title: "Task Order reviews", sub: "Submissions waiting past the review deadline" },
+  { key: "payouts", title: "Payout reminders", sub: "Payment requests and payouts that are due" },
+  { key: "invoices", title: "Invoice reminders", sub: "Invoices past their due date" },
 ];
 
 export function FounderSettings() {
@@ -22,10 +22,26 @@ export function FounderSettings() {
   const [dialog, setDialog] = useState<null | "password" | "2fa">(null);
   const [done, setDone] = useState<string | null>(null);
   const r = readiness.data;
+  const qc = useQueryClient();
+  const saved = useQuery({ queryKey: ["notifications"], queryFn: () => api<NotificationPrefs>("/api/auth/notifications") });
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  useEffect(() => {
+    if (saved.data) setPrefs(saved.data);
+  }, [saved.data]);
+  const dirty = !!prefs && !!saved.data && NOTIFICATIONS.some((n) => prefs[n.key] !== saved.data[n.key]);
+  const save = useMutation({
+    mutationFn: () => api<NotificationPrefs>("/api/auth/notifications", { method: "PUT", body: JSON.stringify(prefs) }),
+    onSuccess: (data) => (qc.setQueryData(["notifications"], data), setDone("Notification settings saved.")),
+  });
 
   return (
     <div className="page">
-      <PageHead title="Settings" sub="Your workspace, profile and preferences." />
+      <PageHead title="Settings" sub="Your workspace, profile and preferences.">
+        <button className="btn btn-primary" disabled={!dirty || save.isPending} onClick={() => (setDone(null), save.mutate())}>
+          Save changes
+        </button>
+      </PageHead>
+      <FormError error={save.error ?? saved.error} />
       <Done text={done} />
 
       <div className="grid-2">
@@ -99,14 +115,25 @@ export function FounderSettings() {
             <span className="th-note">Emailed to you</span>
           </div>
           <div className="form-card">
-            {NOTIFICATIONS.map((n, i) => (
-              <div key={n.title}>
-                {i > 0 && <hr className="divider" style={{ marginBottom: 14 }} />}
-                <SettingRow title={n.title} sub={n.sub}>
-                  <span className="chip chip-success">On</span>
-                </SettingRow>
-              </div>
-            ))}
+            {!prefs && !saved.error && <Skeleton h={160} />}
+            {prefs &&
+              NOTIFICATIONS.map((n, i) => (
+                <div key={n.key}>
+                  {i > 0 && <hr className="divider" style={{ marginBottom: 14 }} />}
+                  <SettingRow title={n.title} sub={n.sub}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={prefs[n.key]}
+                      aria-label={n.title}
+                      className="switch"
+                      onClick={() => setPrefs({ ...prefs, [n.key]: !prefs[n.key] })}
+                    >
+                      <span className="switch-knob" />
+                    </button>
+                  </SettingRow>
+                </div>
+              ))}
           </div>
         </section>
       </div>

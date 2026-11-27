@@ -126,8 +126,25 @@ def send_email(msg: OutgoingEmail) -> bool:
         return False
 
 
-def notify_admin(subject: str, text: str) -> None:
+# Founder emails that can be switched off in Settings. Anything else (e.g. sign-in alerts) always goes.
+NOTIFY_KINDS = ("offers", "reviews", "payouts", "invoices")
+
+
+def notify_enabled(db, kind: str) -> bool:
+    """True unless the founder switched this kind of email off."""
+    from sqlalchemy import select
+
+    from .models import User
+
+    prefs = db.scalar(select(User.notify_prefs).where(User.role == "admin").order_by(User.id).limit(1))
+    return not (prefs and prefs.get(kind) is False)
+
+
+def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None) -> None:
     settings = get_settings()
+    if kind and db is not None and not notify_enabled(db, kind):
+        log.info("Admin notification switched off (%s): %s", kind, subject)
+        return
     if settings.admin_notify_email:
         send_email(OutgoingEmail(to=settings.admin_notify_email, subject=subject, text=text))
     else:

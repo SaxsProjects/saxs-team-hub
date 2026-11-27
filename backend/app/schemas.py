@@ -53,6 +53,15 @@ class TotpCodeIn(BaseModel):
     code: str
 
 
+class NotificationPrefs(BaseModel):
+    """Founder emails; each one can be switched off."""
+
+    offers: bool = True
+    reviews: bool = True
+    payouts: bool = True
+    invoices: bool = True
+
+
 class MeOut(BaseModel):
     id: int
     email: str
