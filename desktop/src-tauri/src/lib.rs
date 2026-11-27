@@ -9,7 +9,7 @@
 //! commands exposed to it. Only the Team Hub's own addresses open inside the app; any other link
 //! opens in the person's normal browser.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::webview::DownloadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
@@ -51,7 +51,7 @@ fn open_outside(url: &Url) {
 }
 
 /// Downloads\Team Hub\<file name>, without overwriting an earlier file of the same name.
-fn download_target(app: &AppHandle, suggested: &PathBuf) -> Option<PathBuf> {
+fn download_target(app: &AppHandle, suggested: &Path) -> Option<PathBuf> {
     let dir = app.path().download_dir().ok()?.join("Team Hub");
     std::fs::create_dir_all(&dir).ok()?;
     let name = suggested.file_name()?.to_string_lossy().to_string();
@@ -110,7 +110,7 @@ fn main_window(app: &AppHandle) -> tauri::Result<()> {
         })
         .on_download(move |_webview, event| match event {
             DownloadEvent::Requested { url, destination } => {
-                if !(stays_inside(&url)) {
+                if !stays_inside(&url) {
                     return false;
                 }
                 match download_target(&handle, destination) {

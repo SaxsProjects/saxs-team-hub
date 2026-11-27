@@ -3281,6 +3281,8 @@ dependencies = [
 name = "saxs-team-hub-desktop"
 version = "1.8.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
