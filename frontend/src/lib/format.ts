@@ -72,3 +72,25 @@ export function daysBetween(from: string, to: string): number {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** "26 November 2026" */
+export function fullDay(value: string | Date): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: TIME_ZONE }).format(parseDay(value));
+}
+
+/** "26 Nov 2026" */
+export function shortDay(value: string | Date): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: TIME_ZONE }).format(parseDay(value));
+}
+
+/** Today's calendar day in South Africa, "YYYY-MM-DD". */
+export function todaySA(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE }).format(now);
+}
+
+/** 430080 -> "420 KB" */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
