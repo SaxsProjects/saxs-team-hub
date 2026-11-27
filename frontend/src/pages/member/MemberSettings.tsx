@@ -238,7 +238,7 @@ function BankForm({ initial, onCancel, onSaved }: { initial: MaskedBanking | nul
   );
 }
 
-function PasswordDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+export function PasswordDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");

@@ -94,3 +94,16 @@ export function fileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** "1 200.50" / "R1200" / "1,200.5" -> 120050 cents; null when it isn't a positive amount. */
+export function parseRands(text: string): number | null {
+  const clean = text.replace(/[Rr\s]/g, "").replace(/,(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(clean)) return null;
+  const [whole, frac = ""] = clean.split(".");
+  return Number(whole) * 100 + Number(frac.padEnd(2, "0"));
+}
+
+/** Cents -> "1200.50" for an editable amount field. */
+export function centsToInput(cents: number): string {
+  return (cents / 100).toFixed(2);
+}

@@ -39,3 +39,18 @@ describe("names", () => {
     expect(initials(null)).toBe("?");
   });
 });
+
+describe("parseRands", () => {
+  it("reads the ways people type rand amounts", async () => {
+    const { parseRands } = await import("./format");
+    expect(parseRands("1 200.50")).toBe(120050);
+    expect(parseRands("R18 000")).toBe(1800000);
+    expect(parseRands("1,200.5")).toBe(120050);
+    expect(parseRands("450")).toBe(45000);
+    expect(parseRands("12,5")).toBe(1250);
+    expect(parseRands("")).toBeNull();
+    expect(parseRands("-5")).toBeNull();
+    expect(parseRands("1.234")).toBeNull();
+    expect(parseRands("abc")).toBeNull();
+  });
+});
