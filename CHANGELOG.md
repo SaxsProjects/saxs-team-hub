@@ -4,6 +4,13 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.8.1] - 2026-11-27
+
+### Changed
+- **Windows app looks for updates every 6 hours while it is open**, not only when it starts.
+- If an update can't be installed (for example security software blocked it), the Windows app now says so and
+  offers to open the releases page, instead of failing silently.
+
 ## [1.8.0] - 2026-11-27
 
 ### Added

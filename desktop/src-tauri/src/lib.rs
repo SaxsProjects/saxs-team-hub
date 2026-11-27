@@ -10,6 +10,7 @@
 //! opens in the person's normal browser.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tauri::webview::DownloadEvent;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
@@ -128,26 +129,57 @@ fn main_window(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// How often a long-open app looks for a new version (it also looks every time it starts).
+const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+const RELEASES: &str = "https://github.com/SaxsProjects/saxs-team-hub/releases/latest";
+
 /// Look for a new version in the GitHub releases; ask before installing it.
-fn check_for_update(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let Ok(updater) = app.updater() else { return };
-        let Ok(Some(update)) = updater.check().await else {
-            return;
-        };
-        let install = app
-            .dialog()
-            .message(format!(
-                "Version {} of the Team Hub app is ready (you have {}). It installs in a few seconds and the app opens again.",
-                update.version, update.current_version
-            ))
-            .title("Update available")
-            .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCancelCustom("Update now".into(), "Later".into()))
-            .blocking_show();
-        if install && update.download_and_install(|_, _| {}, || {}).await.is_ok() {
-            app.restart();
+async fn check_for_update(app: &AppHandle) {
+    let Ok(updater) = app.updater() else { return };
+    let Ok(Some(update)) = updater.check().await else {
+        return; // offline, or already up to date
+    };
+    let install = app
+        .dialog()
+        .message(format!(
+            "Version {} of the Team Hub app is ready (you have {}). It installs in a few seconds and the app opens again.",
+            update.version, update.current_version
+        ))
+        .title("Update available")
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::OkCancelCustom("Update now".into(), "Later".into()))
+        .blocking_show();
+    if !install {
+        return;
+    }
+    // The update is only installed if its signature matches the key built into this app.
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(_) => {
+            let open = app
+                .dialog()
+                .message(format!(
+                    "Version {} couldn't be installed. Security software may have blocked the installer. \
+                     You can download it from the Team Hub releases on GitHub instead.",
+                    update.version
+                ))
+                .title("Update not installed")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom("Open releases".into(), "Close".into()))
+                .blocking_show();
+            if open {
+                let _ = tauri_plugin_opener::open_url(RELEASES, None::<&str>);
+            }
         }
+    }
+}
+
+/// Check now, then every few hours while the app stays open. Runs on its own thread so the
+/// question never holds up the window.
+fn watch_for_updates(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        tauri::async_runtime::block_on(check_for_update(&app));
+        std::thread::sleep(UPDATE_CHECK_EVERY);
     });
 }
 
@@ -168,7 +200,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             main_window(app.handle())?;
-            check_for_update(app.handle().clone());
+            watch_for_updates(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
