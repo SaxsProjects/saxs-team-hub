@@ -99,6 +99,11 @@
   .menu-btn { display: grid; place-items: center; width: 40px; height: 40px; margin-left: -8px; border: 0; background: none; border-radius: var(--radius); cursor: pointer; color: var(--ink); }
   .topbar { gap: 8px; padding: 0 16px; height: 64px; }
   .search, .topbar-divider, .topbar-help, .user-text, .user-btn > svg { display: none; }
+  .search-toggle { display: grid; margin-left: auto; }
+  .search.is-expanded { display: flex; position: absolute; left: 12px; right: 12px; top: 12px; width: auto; margin: 0; z-index: 40; background: var(--surface); border-color: var(--brand); }
   .content { padding: 20px 16px 32px; }
   .notices { width: min(320px, calc(100vw - 32px)); }
 }
+.notice.is-active { background: var(--brand-tint); }
+.search-toggle, .search-close { display: none; }
+@media (max-width: 900px) { .search.is-expanded .search-close { display: grid; width: 32px; height: 32px; } }

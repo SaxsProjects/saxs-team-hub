@@ -4,7 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, downloadFile, post } from "../../api/client";
 import type { Client, CreditNote, FinanceReadiness, Invoice, LineInput, Project, Quotation, Receipt } from "../../api/types";
-import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, Skeleton, StatCard, Tabs, paginate } from "../../components/ui";
+import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, Skeleton, StatCard, Tabs, paginate, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, parseRands, plural, rands, shortDay, todaySA } from "../../lib/format";
 import { projectRef } from "../member/MyProjects";
 import "../overview.css";
@@ -170,7 +170,7 @@ function useList<T extends { id: number }>(items: T[], match: (t: T, q: string, 
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(0);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useSelectedFromUrl();
   const q = search.trim().toLowerCase();
   const filtered = items.filter((t) => match(t, q, status));
   const view = paginate(filtered, page);

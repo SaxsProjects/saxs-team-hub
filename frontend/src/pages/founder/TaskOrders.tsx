@@ -3,7 +3,7 @@ import { Clock, FileText } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api, post } from "../../api/client";
 import type { FounderTaskOrder, TaskOrderStatus } from "../../api/types";
-import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, StatCard, Tabs, paginate } from "../../components/ui";
+import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, StatCard, Tabs, paginate, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, parseRands, plural, rands, shortDay, todaySA } from "../../lib/format";
 import { WORKING_STAGES, usePeople } from "../../lib/people";
 import "../overview.css";
@@ -32,7 +32,7 @@ export function TaskOrders() {
   const people = usePeople();
   const [filter, setFilter] = useState<Filter>("all");
   const [page, setPage] = useState(0);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useSelectedFromUrl();
   const [creating, setCreating] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 

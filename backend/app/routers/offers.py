@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..company import company_settings
 from ..config import get_settings
 from ..db import get_db
 from ..deps import client_ip, public_offer_limiter, require_admin
@@ -354,6 +355,7 @@ def accept_offer(token: str, body: AcceptIn, request: Request, background: Backg
         user_agent=ua,
         offer_hash=current_hash,
         pdf_sha256=offer.pdf_document.sha256 if offer.pdf_document else None,
+        company=company_settings(db),
     )
     acceptance_doc = store_document(
         db,

@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bell, ChevronRight, CircleHelp, LogOut, Menu, Search, X } from "lucide-react";
+import { Bell, ChevronRight, CircleHelp, LogOut, Menu, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { api } from "../api/client";
-import type { AuditEntry, Dashboard, MemberOverview, Project } from "../api/types";
+import type { AuditEntry, Dashboard, MemberOverview } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { describeAudit } from "../lib/activity";
 import { clock, firstName, shortDate } from "../lib/format";
 import { Avatar } from "./Avatar";
+import { GlobalSearch } from "./GlobalSearch";
 import { FOUNDER_NAV, MEMBER_NAV, SETTINGS_ITEM, type NavItem } from "./nav";
 import markLight from "../assets/logo-mark-light.png";
 import wordLight from "../assets/logo-wordmark-light.png";
@@ -22,12 +23,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   useEffect(() => setDrawerOpen(false), [location.pathname]);
 
-  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: () => api<Dashboard>("/api/dashboard"), enabled: isAdmin });
+  const dashboard = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => api<Dashboard>("/api/dashboard"),
+    enabled: isAdmin,
+  });
   const reviews = dashboard.data?.task_orders_by_status?.submitted ?? 0;
 
-  const current = [...nav, SETTINGS_ITEM].find((i) =>
-    i.to === "/" ? location.pathname === "/" : location.pathname.startsWith(i.to),
-  );
+  const current = [...nav, SETTINGS_ITEM].find((i) => (i.to === "/" ? location.pathname === "/" : location.pathname.startsWith(i.to)));
 
   return (
     <div className="shell">
@@ -130,13 +133,7 @@ function UserMenu() {
   const name = me?.full_name ?? (isAdmin ? "Phathutshedzo Mamagau" : me?.email);
   return (
     <div className="popover-anchor" ref={ref}>
-      <button
-        className="user-btn"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={menuId}
-        onClick={() => setOpen(!open)}
-      >
+      <button className="user-btn" aria-haspopup="menu" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(!open)}>
         <Avatar url={me?.avatar_url} name={name} size={36} />
         <span className="user-text">
           <span className="user-name">{isAdmin ? firstName(name) : name}</span>
@@ -173,12 +170,56 @@ interface Notice {
   to: string;
 }
 
+const SEEN_KEY = "teamhub.activitySeen";
+
+function readSeen(isAdmin: boolean): number {
+  if (!isAdmin) return 0;
+  try {
+    return Number(localStorage.getItem(SEEN_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeSeen(id: number): void {
+  try {
+    localStorage.setItem(SEEN_KEY, String(id));
+  } catch {
+    /* private mode: the dot just shows again next time */
+  }
+}
+
+/** Where an activity item leads: the record itself where a page can open it, otherwise its history. */
+function auditLink(a: AuditEntry): string {
+  const id = a.entity_id;
+  switch (a.entity) {
+    case "person":
+      return id ? `/team/${id}` : "/team";
+    case "offer":
+      return "/team";
+    case "project":
+      return id ? `/projects/${id}` : "/projects";
+    case "task_order":
+      return id ? `/task-orders?open=${id}` : "/task-orders";
+    case "invoice":
+      return id ? `/finance/invoices?open=${id}` : "/finance/invoices";
+    case "quotation":
+      return id ? `/finance/quotations?open=${id}` : "/finance/quotations";
+    case "client":
+      return id ? `/finance/clients?open=${id}` : "/finance/clients";
+    case "payout":
+      return id ? `/payouts?open=${id}` : "/payouts";
+    default:
+      return `/audit?event=${a.id}`;
+  }
+}
+
 function Notifications({ isAdmin }: { isAdmin: boolean }) {
   const { open, setOpen, ref } = usePopover();
   const navigate = useNavigate();
   const audit = useQuery({
     queryKey: ["audit", 6],
-    queryFn: () => api<AuditEntry[]>("/api/audit?limit=6"),
+    queryFn: () => api<AuditEntry[]>("/api/audit?scope=workspace&limit=6"),
     enabled: isAdmin,
   });
   const overview = useQuery({
@@ -192,7 +233,12 @@ function Notifications({ isAdmin }: { isAdmin: boolean }) {
       return (audit.data ?? []).map((a) => {
         const d = describeAudit(a);
         const when = `${shortDate(a.at)} ${clock(a.at)}`;
-        return { id: `a${a.id}`, title: d.title, detail: d.detail ? `${d.detail} · ${when}` : when, to: "/audit" };
+        return {
+          id: `a${a.id}`,
+          title: d.title,
+          detail: d.detail ? `${d.detail} · ${when}` : when,
+          to: auditLink(a),
+        };
       });
     }
     const o = overview.data;
@@ -206,7 +252,12 @@ function Notifications({ isAdmin }: { isAdmin: boolean }) {
         to: "/my/task-orders",
       });
     if (o.can_request_payment_count)
-      out.push({ id: "pay", title: "A payout is ready to request", detail: "Ask for payment of what is due", to: "/my/payouts" });
+      out.push({
+        id: "pay",
+        title: "A payout is ready to request",
+        detail: "Ask for payment of what is due",
+        to: "/my/payouts",
+      });
     if (o.onboarding_open)
       out.push({
         id: "onb",
@@ -217,16 +268,23 @@ function Notifications({ isAdmin }: { isAdmin: boolean }) {
     return out;
   }, [isAdmin, audit.data, overview.data]);
 
+  // The dot means "something new since you last looked", not "there is activity".
+  const newest = isAdmin ? (audit.data?.[0]?.id ?? 0) : notices.length;
+  const [seen, setSeen] = useState(() => readSeen(isAdmin));
+  const unread = isAdmin ? newest > seen : notices.length > 0;
+  const toggle = () => {
+    if (!open && isAdmin && newest) {
+      setSeen(newest);
+      writeSeen(newest);
+    }
+    setOpen(!open);
+  };
+
   return (
     <div className="popover-anchor" ref={ref}>
-      <button
-        className="icon-btn"
-        aria-label={`Notifications${notices.length ? ` (${notices.length})` : ""}`}
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
+      <button className="icon-btn" aria-label={unread ? "Notifications: new activity" : "Notifications"} aria-expanded={open} onClick={toggle}>
         <Bell size={22} strokeWidth={1.75} aria-hidden="true" />
-        {notices.length > 0 && <span className="bell-dot" aria-hidden="true" />}
+        {unread && <span className="bell-dot" aria-hidden="true" />}
       </button>
       {open && (
         <div className="popover notices" role="dialog" aria-label="Notifications">
@@ -245,69 +303,6 @@ function Notifications({ isAdmin }: { isAdmin: boolean }) {
               >
                 <span className="notice-title">{n.title}</span>
                 <span className="notice-detail">{n.detail}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GlobalSearch({ isAdmin, nav }: { isAdmin: boolean; nav: NavItem[] }) {
-  const [q, setQ] = useState("");
-  const { open, setOpen, ref } = usePopover();
-  const navigate = useNavigate();
-  const listId = useId();
-  const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: () => api<Project[]>("/api/projects"),
-    enabled: isAdmin && open,
-  });
-  const term = q.trim().toLowerCase();
-  const results = useMemo(() => {
-    if (!term) return [];
-    const pages = [...nav, SETTINGS_ITEM]
-      .filter((i) => i.label.toLowerCase().includes(term))
-      .map((i) => ({ key: i.to, label: i.label, hint: "Page", to: i.to }));
-    const found = (projects.data ?? [])
-      .filter((p) => `${p.name} ${p.client_name}`.toLowerCase().includes(term))
-      .map((p) => ({ key: `p${p.id}`, label: p.name, hint: p.client_name, to: `/projects/${p.id}` }));
-    return [...pages, ...found].slice(0, 8);
-  }, [term, nav, projects.data]);
-
-  const go = (to: string) => {
-    navigate(to);
-    setQ("");
-    setOpen(false);
-  };
-  return (
-    <div className="search popover-anchor" ref={ref} role="search">
-      <Search size={18} className="muted" aria-hidden="true" />
-      <input
-        className="search-input"
-        placeholder={isAdmin ? "Search projects, people, documents" : "Search my work and documents"}
-        aria-label="Search"
-        aria-controls={listId}
-        value={q}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && results[0]) go(results[0].to);
-        }}
-      />
-      {open && term && (
-        <div className="popover search-results" id={listId} role="listbox" aria-label="Search results">
-          {results.length === 0 ? (
-            <p className="empty">No matches for "{q.trim()}".</p>
-          ) : (
-            results.map((r) => (
-              <button key={r.key} role="option" aria-selected="false" className="notice" onClick={() => go(r.to)}>
-                <span className="notice-title">{r.label}</span>
-                <span className="notice-detail">{r.hint}</span>
               </button>
             ))
           )}

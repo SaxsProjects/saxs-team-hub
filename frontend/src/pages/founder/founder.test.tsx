@@ -167,22 +167,39 @@ describe("Audit history", () => {
 });
 
 describe("Founder settings", () => {
-  it("switches an email off and saves only after Save changes", async () => {
+  const routes = {
+    "/api/finance/readiness": { vat_registered: false, registration_number_set: true, bank_details_set: true, signatory_name_set: true, signature_set: true, missing: [] },
+    "/api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: true },
+    "/api/audit": [{ id: 9, actor: "admin", action: "auth.login", entity: "user", entity_id: 1, before: null, after: null, at: "2026-11-27T07:30:00Z" }],
+    "/api/company": {
+      company_name: "SaxsProjects", company_legal_name: "SaxsProjects (Pty) Ltd", company_registration_number: "2026/941760/07", company_vat_number: "",
+      company_address: "", company_email: "", company_phone: "", company_website: "", company_bank_name: "Capitec", company_bank_account_name: "",
+      company_bank_account_number: "1234567890", company_bank_branch_code: "470010", company_bank_account_type: "", signatory_name: "P. Mamagau", signatory_title: "Director",
+    },
+  };
+
+  it("saves a notification switch as soon as it is flipped", async () => {
     const user = userEvent.setup();
-    const calls = renderPage(<FounderSettings />, {
-      "/api/finance/readiness": { vat_registered: false, registration_number_set: true, bank_details_set: true, signatory_name_set: true, signature_set: true, missing: [] },
-      "/api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: true },
-      "PUT /api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: false },
-    });
-    const save = screen.getByRole("button", { name: "Save changes" });
-    expect(save).toBeDisabled();
+    const calls = renderPage(<FounderSettings />, { ...routes, "PUT /api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: false } });
     const invoices = await screen.findByRole("switch", { name: "Invoice reminders" });
     expect(invoices).toHaveAttribute("aria-checked", "true");
     await user.click(invoices);
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
     expect(invoices).toHaveAttribute("aria-checked", "false");
-    expect(calls.some((c) => c.method === "PUT")).toBe(false);
-    await user.click(save);
-    await screen.findByText("Notification settings saved.");
     expect(calls.find((c) => c.method === "PUT")).toMatchObject({ url: "/api/auth/notifications", body: { offers: true, reviews: true, payouts: true, invoices: false } });
+  });
+
+  it("shows sign-ins under Security, masks the account, and needs a password to change bank details", async () => {
+    const user = userEvent.setup();
+    const calls = renderPage(<FounderSettings />, { ...routes, "PUT /api/company": routes["/api/company"] });
+    expect(await screen.findByText("Signed in")).toBeInTheDocument();
+    expect(await screen.findByText("Capitec · •••• 7890")).toBeInTheDocument();
+    expect(calls.find((c) => c.url === "/api/audit")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Manage securely" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("current password");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 });

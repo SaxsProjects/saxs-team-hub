@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { api, downloadFile, post } from "../../api/client";
 import type { Dashboard, Payout, Project } from "../../api/types";
-import { Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, RowButton, Skeleton, StatCard, Tabs } from "../../components/ui";
+import { Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, RowButton, Skeleton, StatCard, Tabs, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, plural, rands, shortDate, shortDay, todaySA } from "../../lib/format";
 import { calc, statementPath } from "../../lib/payouts";
 import { usePeople } from "../../lib/people";
@@ -31,7 +31,7 @@ export function Payouts() {
   const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: () => api<Dashboard>("/api/dashboard") });
   const people = usePeople();
   const [filter, setFilter] = useState<Filter>("due");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useSelectedFromUrl();
   const [done, setDone] = useState<string | null>(null);
   const [failed, setFailed] = useState<unknown>(null);
 

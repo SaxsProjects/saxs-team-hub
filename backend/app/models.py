@@ -519,6 +519,17 @@ class CreditNote(Base):
     __table_args__ = (CheckConstraint("amount_cents > 0", name="ck_credit_note_amount"),)
 
 
+class CompanyProfile(Base):
+    """Company details edited in the app (one row). Values override the server settings; stored encrypted."""
+
+    __tablename__ = "company_profile"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data_enc: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(320))
+
+
 class AuditLog(Base):
     """Append-only record of every important change. Never updated or deleted by the app."""
 

@@ -17,6 +17,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..company import company_settings
 from ..config import get_settings
 from ..db import get_db
 from ..deps import require_admin
@@ -53,8 +54,8 @@ PDF_TYPE = "application/pdf"
 # ---- Helpers ---------------------------------------------------------------------------------------
 
 
-def readiness() -> FinanceReadinessOut:
-    s = get_settings()
+def readiness(db: Session) -> FinanceReadinessOut:
+    s = company_settings(db)
     missing = []
     if not s.signature_configured:
         missing.append("SIGNATURE_IMAGE_PATH or SIGNATURE_IMAGE_BASE64")
@@ -77,13 +78,13 @@ def readiness() -> FinanceReadinessOut:
     )
 
 
-def _require(ok: bool, what: str) -> None:
+def _require(db: Session, ok: bool, what: str) -> None:
     if not ok:
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Cannot issue yet: set {', '.join(readiness().missing)} first ({what})")
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Cannot issue yet: set {', '.join(readiness(db).missing)} first ({what})")
 
 
-def _vat_rate() -> int:
-    s = get_settings()
+def _vat_rate(db: Session) -> int:
+    s = company_settings(db)
     return s.vat_rate_bp if s.vat_registered else 0
 
 
@@ -99,7 +100,7 @@ def _check_project(db: Session, project_id: int | None) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
 
 
-def _set_lines(doc: Quotation | Invoice, lines: list[LineIn]) -> None:
+def _set_lines(db: Session, doc: Quotation | Invoice, lines: list[LineIn]) -> None:
     doc.lines.clear()
     for position, line in enumerate(lines, start=1):
         amount = line_total(line.quantity, line.unit_price_cents)
@@ -114,15 +115,15 @@ def _set_lines(doc: Quotation | Invoice, lines: list[LineIn]) -> None:
                 line_total_cents=amount,
             )
         )
-    _recalculate(doc)
+    _recalculate(db, doc)
 
 
-def _recalculate(doc: Quotation | Invoice) -> None:
+def _recalculate(db: Session, doc: Quotation | Invoice) -> None:
     try:
-        totals = document_totals([line.line_total_cents for line in doc.lines], _vat_rate())
+        totals = document_totals([line.line_total_cents for line in doc.lines], _vat_rate(db))
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    doc.vat_rate_bp = _vat_rate()
+    doc.vat_rate_bp = _vat_rate(db)
     doc.subtotal_cents = totals.subtotal_cents
     doc.vat_cents = totals.vat_cents
     doc.total_cents = totals.total_cents
@@ -164,9 +165,9 @@ def _refresh_invoice_status(inv: Invoice) -> None:
 
 
 @router.get("/finance/readiness", response_model=FinanceReadinessOut)
-def finance_readiness(_: User = Depends(require_admin)):
+def finance_readiness(db: Session = Depends(get_db), _: User = Depends(require_admin)):
     """Which company settings are still missing before quotations and invoices can be issued."""
-    return readiness()
+    return readiness(db)
 
 
 # ---- Clients -------------------------------------------------------------------------------------
@@ -237,7 +238,7 @@ def create_quotation(body: QuotationIn, db: Session = Depends(get_db), admin: Us
     _check_project(db, body.project_id)
     q = Quotation(client_id=body.client_id, project_id=body.project_id, title=body.title.strip(), notes=body.notes)
     db.add(q)
-    _set_lines(q, body.lines)
+    _set_lines(db, q, body.lines)
     db.flush()
     audit(db, admin.email, "quotation.create", "quotation", q.id, after={"total_cents": q.total_cents})
     db.commit()
@@ -265,7 +266,7 @@ def update_quotation(
     if "notes" in changes:
         q.notes = changes["notes"]
     if body.lines is not None:
-        _set_lines(q, body.lines)
+        _set_lines(db, q, body.lines)
     audit(db, admin.email, "quotation.update", "quotation", q.id, after={"total_cents": q.total_cents})
     db.commit()
     return q
@@ -288,15 +289,15 @@ def issue_quotation(quotation_id: int, db: Session = Depends(get_db), admin: Use
         raise HTTPException(status.HTTP_409_CONFLICT, "This quotation has already been issued")
     if not q.lines:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add at least one line first")
-    _require(readiness().can_issue_quotations, "quotations are signed")
-    _recalculate(q)
+    _require(db, readiness(db).can_issue_quotations, "quotations are signed")
+    _recalculate(db, q)
     today = today_local()
     q.issue_date = today
     q.valid_until = today + timedelta(days=get_settings().quote_valid_days)
     q.number = allocate_number(db, "Q", today.year)
     q.status = "issued"
     q.issued_at = datetime.now(UTC)
-    stored = _store_pdf(db, "quotation", q.number, quotation_pdf(q, draft=False))
+    stored = _store_pdf(db, "quotation", q.number, quotation_pdf(q, draft=False, company=company_settings(db)))
     q.pdf_document_id = stored.id
     q.pdf_sha256 = stored.sha256
     audit(
@@ -353,7 +354,7 @@ def quotation_pdf_file(quotation_id: int, db: Session = Depends(get_db), _: User
     q = get_quotation(db, quotation_id)
     if q.pdf_document_id:
         return _stored_pdf(db, q.pdf_document_id, f"{q.number}.pdf")
-    return _pdf_response(quotation_pdf(q, draft=True), f"quotation-draft-{q.id}.pdf")
+    return _pdf_response(quotation_pdf(q, draft=True, company=company_settings(db)), f"quotation-draft-{q.id}.pdf")
 
 
 # ---- Invoices ------------------------------------------------------------------------------------
@@ -419,7 +420,7 @@ def create_invoice(body: InvoiceIn, db: Session = Depends(get_db), admin: User =
                 amount = remaining
                 label = f"Balance for quotation {q.number}: {q.title}"
             lines = [LineIn(description=label[:500], quantity=1, unit_price_cents=amount)]
-        _set_lines(inv, lines)
+        _set_lines(db, inv, lines)
     else:
         if body.client_id is None or not body.title or not body.lines:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Give a quotation_id, or a client_id, title and lines")
@@ -429,7 +430,7 @@ def create_invoice(body: InvoiceIn, db: Session = Depends(get_db), admin: User =
         _check_project(db, body.project_id)
         inv = Invoice(client_id=body.client_id, project_id=body.project_id, title=body.title.strip(), notes=body.notes)
         db.add(inv)
-        _set_lines(inv, body.lines)
+        _set_lines(db, inv, body.lines)
     db.flush()
     audit(
         db,
@@ -464,7 +465,7 @@ def update_invoice(invoice_id: int, body: InvoiceUpdate, db: Session = Depends(g
     if body.lines is not None:
         if inv.quotation_id is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "Lines of an invoice made from a quotation come from that quotation")
-        _set_lines(inv, body.lines)
+        _set_lines(db, inv, body.lines)
     audit(db, admin.email, "invoice.update", "invoice", inv.id, after={"total_cents": inv.total_cents})
     db.commit()
     return invoice_out(inv)
@@ -487,15 +488,15 @@ def issue_invoice(invoice_id: int, db: Session = Depends(get_db), admin: User = 
         raise HTTPException(status.HTTP_409_CONFLICT, "This invoice has already been issued")
     if not inv.lines or inv.total_cents <= 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "An invoice needs at least one line and a total above zero")
-    _require(readiness().can_issue_invoices, "invoices need the registration number, banking details and signature")
-    _recalculate(inv)
+    _require(db, readiness(db).can_issue_invoices, "invoices need the registration number, banking details and signature")
+    _recalculate(db, inv)
     today = today_local()
     inv.issue_date = today
     inv.due_date = today + timedelta(days=get_settings().invoice_due_days)
     inv.number = allocate_number(db, "INV", today.year)
     inv.status = "issued"
     inv.issued_at = datetime.now(UTC)
-    stored = _store_pdf(db, "invoice", inv.number, invoice_pdf(inv, draft=False))
+    stored = _store_pdf(db, "invoice", inv.number, invoice_pdf(inv, draft=False, company=company_settings(db)))
     inv.pdf_document_id = stored.id
     inv.pdf_sha256 = stored.sha256
     audit(
@@ -516,7 +517,7 @@ def invoice_pdf_file(invoice_id: int, db: Session = Depends(get_db), _: User = D
     inv = get_invoice(db, invoice_id)
     if inv.pdf_document_id:
         return _stored_pdf(db, inv.pdf_document_id, f"{inv.number}.pdf")
-    return _pdf_response(invoice_pdf(inv, draft=True), f"invoice-draft-{inv.id}.pdf")
+    return _pdf_response(invoice_pdf(inv, draft=True, company=company_settings(db)), f"invoice-draft-{inv.id}.pdf")
 
 
 @router.post("/invoices/{invoice_id}/payments", response_model=InvoicePaymentOut, status_code=201)
@@ -538,7 +539,7 @@ def record_invoice_payment(
         )
     if body.received_on > today_local():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The payment date cannot be in the future")
-    _require(readiness().can_issue_quotations, "receipts are signed")
+    _require(db, readiness(db).can_issue_quotations, "receipts are signed")
 
     payouts = []
     client_payment_id = None
@@ -568,7 +569,7 @@ def record_invoice_payment(
         reference=reference,
         issue_date=today,
     )
-    stored = _store_pdf(db, "receipt", receipt.number, receipt_pdf(receipt, inv))
+    stored = _store_pdf(db, "receipt", receipt.number, receipt_pdf(receipt, inv, company=company_settings(db)))
     receipt.pdf_document_id = stored.id
     receipt.pdf_sha256 = stored.sha256
     db.add(receipt)
@@ -596,7 +597,7 @@ def issue_credit_note(invoice_id: int, body: CreditNoteIn, db: Session = Depends
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, f"The credit is more than the balance due ({inv.balance_cents / 100:.2f})"
         )
-    _require(readiness().can_issue_quotations, "credit notes are signed")
+    _require(db, readiness(db).can_issue_quotations, "credit notes are signed")
     inv.credited_cents += body.amount_cents
     _refresh_invoice_status(inv)
     today = today_local()
@@ -607,7 +608,7 @@ def issue_credit_note(invoice_id: int, body: CreditNoteIn, db: Session = Depends
         amount_cents=body.amount_cents,
         issue_date=today,
     )
-    stored = _store_pdf(db, "credit_note", note.number, credit_note_pdf(note, inv))
+    stored = _store_pdf(db, "credit_note", note.number, credit_note_pdf(note, inv, company=company_settings(db)))
     note.pdf_document_id = stored.id
     note.pdf_sha256 = stored.sha256
     db.add(note)

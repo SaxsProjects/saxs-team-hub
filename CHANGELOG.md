@@ -4,6 +4,28 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.5.0] - 2026-11-27
+
+### Added
+- **Company details in Settings**: edit the registered name, registration and VAT numbers, address, contact details,
+  signatory and banking details from the app. Needs two-factor; banking changes also need your password, are
+  emailed to you at once and are recorded with the account number masked. Documents use the saved details.
+- **Search that finds things**: people, projects, Task Orders, clients, invoices, quotations and payout statements,
+  with arrow keys and Enter; each result opens the exact record. On phones, search opens from a magnifier button.
+- **Settings → Security** lists recent sign-ins and security events.
+
+### Changed
+- Audit history, the bell and recent activity show workspace activity only; sign-ins and account events moved to
+  Settings → Security.
+- The bell's dot means new activity since you last opened it, and each item opens the record it is about.
+- Notification switches save as soon as they are flipped.
+- Phones: stats sit two per row so lists start on the first screen; wide tables scroll inside their card and amounts
+  never break across lines; slightly larger secondary text.
+
+### Fixed
+- Dialogs take keyboard focus when they open, keep Tab inside, close on Escape and give focus back; long dialogs
+  scroll instead of running off the screen.
+
 ## [1.4.2] - 2026-11-27
 
 ### Fixed

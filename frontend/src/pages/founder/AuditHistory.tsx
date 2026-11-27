@@ -40,7 +40,7 @@ function csvCell(v: string): string {
 }
 
 export function AuditHistory() {
-  const log = useQuery({ queryKey: ["audit", "all"], queryFn: () => api<AuditEntry[]>("/api/audit?limit=1000") });
+  const log = useQuery({ queryKey: ["audit", "all"], queryFn: () => api<AuditEntry[]>("/api/audit?scope=workspace&limit=1000") });
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
   const [params] = useSearchParams();
@@ -48,7 +48,7 @@ export function AuditHistory() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(0);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(Number(params.get("event")) || null);
 
   if (log.isError) return <ErrorNote error={log.error} onRetry={() => log.refetch()} />;
   const all = log.data ?? [];
@@ -83,7 +83,7 @@ export function AuditHistory() {
 
   return (
     <div className="page">
-      <PageHead title="Audit history" sub="Search events across the workspace.">
+      <PageHead title="Audit history" sub="Everything that changed in the workspace. Sign-ins and security events are in Settings → Security.">
         <span className="chip chip-neutral">Read only</span>
         <button className="btn btn-primary" onClick={exportEvents} disabled={filtered.length === 0}>
           Export events
