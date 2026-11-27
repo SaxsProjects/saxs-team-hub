@@ -3,6 +3,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { api, post } from "../../api/client";
 import type { AuditEntry, CompanyDetails, FinanceReadiness, NotificationPrefs } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
+import { TrustedDevices } from "../../components/TrustedDevices";
 import { Dialog, Done, Field, FormError, PageHead, Skeleton } from "../../components/ui";
 import { describeAudit } from "../../lib/activity";
 import { clock, shortDate } from "../../lib/format";
@@ -161,6 +162,8 @@ export function FounderSettings() {
                 Sign out
               </button>
             </SettingRow>
+            <hr className="divider" />
+            <TrustedDevices />
             <hr className="divider" />
             <div>
               <p className="setting-title">Recent sign-ins and security events</p>

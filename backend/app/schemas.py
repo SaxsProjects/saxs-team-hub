@@ -18,17 +18,22 @@ class LoginIn(BaseModel):
     email: EmailStr
     password: str
     totp_code: str | None = None
+    # Trust this phone or computer: afterwards it unlocks with a passkey or the password, without two-factor.
+    trust_device: bool = False
+    device_name: str | None = Field(None, max_length=80)
 
 
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"  # noqa: S105 - OAuth token type, not a secret
     expires_in: int
+    device_trusted: bool = False
 
 
 class SetPasswordIn(BaseModel):
     token: str
     password: str = Field(min_length=10, max_length=200)
+    totp_code: str | None = None  # needed for a reset when two-factor is on
 
 
 class ForgotPasswordIn(BaseModel):

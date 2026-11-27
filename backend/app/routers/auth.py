@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import devices
 from ..avatars import avatar_url
 from ..config import get_settings
 from ..db import get_db
@@ -150,16 +151,18 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
     user.last_login_at = datetime.now(UTC)
     audit(db, user.email, "auth.login", "user", user.id)
     token, expires_in = start_session(db, user, request, response)
+    if body.trust_device:
+        devices.trust_device(db, user, request, response, body.device_name)
     db.commit()
-    return TokenOut(access_token=token, expires_in=expires_in)
+    return TokenOut(access_token=token, expires_in=expires_in, device_trusted=body.trust_device)
 
 
 PASSWORD_TOKEN_PURPOSES = ("set_password", "reset_password")
 RESET_LINK_HOURS = 1
 
 
-def apply_password_token(db: Session, token: str, password: str) -> User:
-    """Use a set-password or reset-password link. Raises 400 if the link is invalid, used or expired."""
+def password_token_user(db: Session, token: str) -> tuple[ActionToken, User]:
+    """The link's record and account. Raises 400 if the link is invalid, used or expired."""
     record = db.scalar(select(ActionToken).where(ActionToken.token_hash == hash_token(token)))
     now = datetime.now(UTC)
     if not record or record.purpose not in PASSWORD_TOKEN_PURPOSES or record.used_at or record.expires_at < now:
@@ -167,9 +170,38 @@ def apply_password_token(db: Session, token: str, password: str) -> User:
     user = db.get(User, record.user_id)
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account is not active.")
+    return record, user
+
+
+def reset_needs_code(record: ActionToken, user: User) -> bool:
+    """A forgotten-password reset also needs the two-factor code when two-factor is on."""
+    return record.purpose == "reset_password" and user.totp_enabled
+
+
+def apply_password_token(db: Session, token: str, password: str, totp_code: str | None = None) -> User:
+    """Use a set-password or reset-password link. Raises 400 if the link is invalid, used or expired."""
+    record, user = password_token_user(db, token)
+    if reset_needs_code(record, user):
+        settings = get_settings()
+        window, limit = settings.login_lockout_minutes * 60, settings.totp_failures_per_account
+        if not (totp_code or "").strip():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter the 6-digit code from your authenticator app.")
+        n = totp_failures.try_reserve(user.email, limit, window)
+        if not n:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED_HINT.format(minutes=settings.login_lockout_minutes))
+        if not verify_totp(decrypt_text(user.totp_secret_enc), totp_code.strip()):
+            if n == limit:
+                audit(db, "anonymous", "auth.totp_lock", "user", user.id)
+                db.commit()
+                _send_totp_alert(user.email)
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "That two-factor code is wrong. Check your authenticator app and try again."
+            )
+        totp_failures.refund(user.email)
     user.password_hash = hash_password(password)
-    record.used_at = now
+    record.used_at = datetime.now(UTC)
     revoke_sessions(user)  # sign out everywhere after a password change
+    devices.revoke_all(db, user, "password_reset")  # and trust no device until it signs in fully again
     audit(db, user.email, f"auth.{record.purpose}", "user", user.id)
     db.commit()
     return user
@@ -178,7 +210,7 @@ def apply_password_token(db: Session, token: str, password: str) -> User:
 @router.post("/set-password", status_code=204)
 def set_password(body: SetPasswordIn, db: Session = Depends(get_db)):
     """Set a password from an invite link or a password-reset link."""
-    apply_password_token(db, body.token, body.password)
+    apply_password_token(db, body.token, body.password, body.totp_code)
 
 
 @router.post("/forgot-password", status_code=204, dependencies=[Depends(login_limiter)])

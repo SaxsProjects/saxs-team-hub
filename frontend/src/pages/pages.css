@@ -274,3 +274,15 @@
 .security-log { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .security-log li { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
 .security-log time { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Settings > Security: trusted devices */
+.trusted-devices { display: grid; gap: 6px; }
+.device-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.device-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border, #e5e7eb); }
+.device-list li:first-child { border-top: 0; }
+.device-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.device-name { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
+.trusted-devices .btn svg, .passkey-offer .btn svg { vertical-align: -3px; margin-right: 6px; }
+.passkey-offer { padding: 16px; display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 16px; }
+.passkey-offer > div:nth-child(2) { flex: 1; min-width: 200px; }
+.passkey-offer-actions { display: flex; gap: 8px; align-self: center; }

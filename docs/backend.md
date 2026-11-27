@@ -37,6 +37,12 @@ Set `FRONTEND_URL` to the API's own URL until the React frontend exists, so emai
 
 ## Sessions
 
+Trusted devices and passkeys (`app/devices.py`, `app/routers/devices.py`): `GET /api/auth/device` (whose device this
+is), `POST /api/auth/unlock` (password only), `POST /api/auth/unlock/passkey/options` + `/unlock/passkey`,
+`POST /api/auth/passkeys/options` + `/passkeys` (add a passkey to this device), `GET /api/auth/devices`,
+`DELETE /api/auth/devices/{id}`, `POST /api/auth/forget-device`. Login takes `trust_device`. A password reset needs the
+two-factor code when two-factor is on (`totp_code`) and untrusts every device. See docs/deploy.md, "Trusted devices".
+
 Sessions are 60-minute tokens. Changing or resetting a password, or turning a member's access off, signs that account out everywhere: tokens issued before that moment are rejected.
 
 ## How the rules from the plan are enforced

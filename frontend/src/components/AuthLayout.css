@@ -26,3 +26,7 @@
 .code-input { font-size: 22px; letter-spacing: 0.5em; text-align: center; font-variant-numeric: tabular-nums; height: 56px; }
 .back-link { display: inline-flex; align-items: center; gap: 6px; justify-self: center; font-size: 13px; }
 .form-note { margin: -12px 0 20px; padding: 10px 12px; border-radius: var(--radius); background: var(--warning-tint); color: var(--warning-ink); font-size: 12px; }
+.auth-row-between { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: -10px; }
+.check-row { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; min-height: 44px; }
+.check-row input { width: 18px; height: 18px; accent-color: var(--primary, currentColor); }
+.auth-form .btn svg { vertical-align: -3px; margin-right: 6px; }

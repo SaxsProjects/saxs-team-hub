@@ -14,15 +14,42 @@ import {
   signOutHere,
   signOutPending,
 } from "../api/client";
-import type { Me, TokenOut } from "../api/types";
+import type { Me, PasskeyOptions, TokenOut, TrustedDeviceInfo } from "../api/types";
+import { signWithPasskey } from "../lib/passkey";
 
 export type SignInResult = "ok" | "totp_required";
 
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  signIn: (email: string, password: string, totpCode?: string) => Promise<SignInResult>;
+  /** This phone or computer is trusted: it unlocks with a passkey or the password, without two-factor. */
+  device: TrustedDeviceInfo | null;
+  signIn: (email: string, password: string, totpCode?: string, trust?: boolean) => Promise<SignInResult>;
+  unlock: (password: string) => Promise<void>;
+  unlockWithPasskey: (signal?: AbortSignal) => Promise<void>;
+  /** "Use another account": stop trusting this device. */
+  forgetDevice: () => Promise<void>;
   signOut: () => void;
+}
+
+/** On a trusted device the app locks after this long in the background (another app, screen off). */
+export const BACKGROUND_LOCK_MS = 5 * 60_000;
+
+async function thisDevice(): Promise<TrustedDeviceInfo | null> {
+  try {
+    const info = await api<TrustedDeviceInfo>("/api/auth/device");
+    return info && typeof info.email === "string" ? info : null;
+  } catch {
+    return null; // not trusted (401), or offline: the normal sign-in
+  }
+}
+
+/** The app names itself to the server so the device list says "Team Hub Android app". */
+function appDeviceName(): string | undefined {
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor;
+  if (cap?.isNativePlatform?.()) return cap.getPlatform?.() === "ios" ? "Team Hub iPhone app" : "Team Hub Android app";
+  const tauri = (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  return tauri ? "Team Hub Windows app" : undefined;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -70,28 +97,98 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [signedIn]);
 
   const meQuery = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/api/auth/me"), enabled: signedIn, staleTime: 60_000 });
+  // Asked once per sign-in state; the cache is cleared on sign-out, so it is asked again then.
+  const deviceQuery = useQuery({ queryKey: ["device"], queryFn: thisDevice, enabled: !resuming, staleTime: Infinity, retry: false });
+  const device = deviceQuery.data ?? null;
 
-  const signIn = useCallback(async (email: string, password: string, totpCode?: string): Promise<SignInResult> => {
-    try {
-      const out = await post<TokenOut>("/api/auth/login", { email, password, totp_code: totpCode || undefined });
-      setSession(out.access_token, out.expires_in);
-      return "ok";
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401 && e.message === "totp_required") return "totp_required";
+  // A trusted phone locks when it has been in the background for 5 minutes; it opens with a passkey or password.
+  useEffect(() => {
+    if (!signedIn || !device) return;
+    let hiddenAt = document.hidden ? Date.now() : 0;
+    const onChange = () => {
+      if (document.hidden) hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt >= BACKGROUND_LOCK_MS) void signOutHere();
+      else hiddenAt = 0;
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, [signedIn, device]);
+
+  const signIn = useCallback(
+    async (email: string, password: string, totpCode?: string, trust = false): Promise<SignInResult> => {
+      try {
+        const out = await post<TokenOut>("/api/auth/login", {
+          email,
+          password,
+          totp_code: totpCode || undefined,
+          trust_device: trust,
+          device_name: trust ? appDeviceName() : undefined,
+        });
+        setSession(out.access_token, out.expires_in);
+        if (out.device_trusted) void queryClient.invalidateQueries({ queryKey: ["device"] });
+        return "ok";
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401 && e.message === "totp_required") return "totp_required";
+        throw e;
+      }
+    },
+    [queryClient],
+  );
+
+  const afterUnlockFailure = useCallback(
+    (e: unknown) => {
+      // The device was untrusted (removed elsewhere, expired, too many wrong passwords): back to the full sign-in.
+      if (e instanceof ApiError && e.status === 401 && /Sign in/.test(e.message)) void queryClient.invalidateQueries({ queryKey: ["device"] });
       throw e;
-    }
-  }, []);
+    },
+    [queryClient],
+  );
+
+  const unlock = useCallback(
+    async (password: string) => {
+      try {
+        const out = await post<TokenOut>("/api/auth/unlock", { password });
+        setSession(out.access_token, out.expires_in);
+      } catch (e) {
+        afterUnlockFailure(e);
+      }
+    },
+    [afterUnlockFailure],
+  );
+
+  const unlockWithPasskey = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const { challenge_id, options } = await post<PasskeyOptions>("/api/auth/unlock/passkey/options");
+        const credential = await signWithPasskey(options, signal);
+        const out = await post<TokenOut>("/api/auth/unlock/passkey", { challenge_id, credential });
+        setSession(out.access_token, out.expires_in);
+      } catch (e) {
+        afterUnlockFailure(e);
+      }
+    },
+    [afterUnlockFailure],
+  );
+
+  const forgetDevice = useCallback(async () => {
+    await post("/api/auth/forget-device").catch(() => undefined);
+    queryClient.setQueryData(["device"], null);
+  }, [queryClient]);
 
   const signOut = useCallback(() => void signOutHere(), []);
 
   const value = useMemo<AuthState>(
     () => ({
       me: signedIn ? (meQuery.data ?? null) : null,
-      loading: resuming || (signedIn && meQuery.isPending),
+      loading: resuming || (signedIn && meQuery.isPending) || (!signedIn && deviceQuery.isPending),
+      device,
       signIn,
+      unlock,
+      unlockWithPasskey,
+      forgetDevice,
       signOut,
     }),
-    [signedIn, resuming, meQuery.data, meQuery.isPending, signIn, signOut],
+    [signedIn, resuming, meQuery.data, meQuery.isPending, deviceQuery.isPending, device, signIn, unlock, unlockWithPasskey, forgetDevice, signOut],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
