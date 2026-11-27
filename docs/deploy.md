@@ -52,6 +52,26 @@ The web app (`frontend/`, on Vercel at `hub.saxsprojects.co.za`) keeps people si
 - An HttpOnly, Secure, SameSite=Strict renewal cookie (`__Host-teamhub_session`) is swapped for a new one on every renewal; reusing an old one ends the session (`app/sessions.py`).
 - Sign-ins end after 30 minutes without activity (`SESSION_IDLE_MINUTES`), after 12 hours for team members (`SESSION_MAX_HOURS`) or 8 hours for the founder (`ADMIN_SESSION_MAX_HOURS`), on sign-out, and on any password change or reset.
 
+### Trusted devices (stay signed in on your phone)
+
+"Keep me signed in on this device" (ticked by default on phones and in the apps) trusts the device after a full
+sign-in with password and two-factor code. A second HttpOnly cookie (`__Host-teamhub_device`, 90 days, renewed on
+every unlock) names the device; only its hash is stored (`trusted_devices`, `app/devices.py`).
+
+- When a sign-in ends, the trusted device shows **Welcome back** with the email filled in. It unlocks with a passkey
+  (Face ID on iPhone, fingerprint or face on Android, Windows Hello on Windows) or the password alone. No code.
+- The app locks after 5 minutes in the background.
+- Two-factor is asked only on a new device and when resetting a forgotten password.
+- Trust ends when the device is removed (Settings > Security), after a password reset (every device), after
+  90 days unused (`DEVICE_TRUST_DAYS`), after 5 wrong passwords on it (`DEVICE_UNLOCK_FAILURES`), or when the
+  account is switched off. A new trusted device sends an email alert.
+- Passkeys: only the public key is stored (`passkeys`). The relying party is the first `CORS_ORIGINS` host
+  (`hub.saxsprojects.co.za`; override with `WEBAUTHN_RP_ID`). The Android app's signing certificate is in
+  `ANDROID_SIGNING_CERT_SHA256` (public; it is in every APK) and in `frontend/public/.well-known/assetlinks.json`.
+  If the Android signing key ever changes, update both.
+- iPhone: open the hub in Safari, Share > Add to Home Screen. Face ID works through passkeys; no App Store app needed.
+  Safari may forget the device cookie after 7 days without opening the app; then the full sign-in is asked once.
+
 The cookie only reaches the API when the app and API share the company domain, so the API must be served at
 **`api.saxsprojects.co.za`** (a Render custom domain, free) and the app at **`hub.saxsprojects.co.za`**:
 

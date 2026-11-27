@@ -15,6 +15,29 @@ export interface TokenOut {
   access_token: string;
   token_type: string;
   expires_in: number;
+  device_trusted?: boolean;
+}
+
+/** The account a trusted device belongs to, for the "Welcome back" screen. */
+export interface TrustedDeviceInfo {
+  email: string;
+  full_name: string | null;
+  device_name: string;
+  passkey: boolean;
+}
+
+export interface TrustedDevice {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at: string;
+  passkey: boolean;
+  this_device: boolean;
+}
+
+export interface PasskeyOptions {
+  challenge_id: number;
+  options: Record<string, unknown>;
 }
 
 export interface Dashboard {

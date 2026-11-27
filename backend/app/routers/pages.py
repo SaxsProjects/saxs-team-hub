@@ -18,7 +18,7 @@ from ..db import get_db
 from ..deps import login_limiter, public_offer_limiter
 from ..schemas import AcceptIn, DeclineIn, ForgotPasswordIn
 from ..security import MIN_PASSWORD_LENGTH
-from .auth import apply_password_token, forgot_password
+from .auth import apply_password_token, forgot_password, password_token_user, reset_needs_code
 from .offers import accept_offer, decline_offer, view_offer
 
 router = APIRouter(include_in_schema=False)
@@ -159,8 +159,15 @@ def offer_decline_form(
 # ---- Passwords --------------------------------------------------------------------------
 
 
-def password_form(action: str, heading: str, token: str, error: str | None = None) -> str:
+def password_form(action: str, heading: str, token: str, error: str | None = None, ask_code: bool = False) -> str:
     err = f'<div class="error">{escape(error)}</div>' if error else ""
+    code = (
+        '<label for="code">Two-factor code <span class="muted">(6 digits from your authenticator app)</span></label>'
+        '<input id="code" name="totp_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" '
+        'pattern="[0-9 ]*" required>'
+        if ask_code
+        else ""
+    )
     return (
         f'<div class="card"><h1>{escape(heading)}</h1>{err}'
         f'<form method="post" action="{action}"><input type="hidden" name="token" value="{escape(token)}">'
@@ -168,18 +175,32 @@ def password_form(action: str, heading: str, token: str, error: str | None = Non
         f'<input id="pw" name="password" type="password" autocomplete="new-password" minlength="{MIN_PASSWORD_LENGTH}" required>'
         f'<label for="pw2">Repeat the password</label>'
         f'<input id="pw2" name="confirm" type="password" autocomplete="new-password" required>'
+        f"{code}"
         f'<button type="submit">Save password</button></form></div>'
     )
 
 
-def handle_password(action: str, heading: str, token: str, password: str, confirm: str, db: Session) -> HTMLResponse:
-    if len(password) < MIN_PASSWORD_LENGTH:
-        return page(heading, password_form(action, heading, token, f"Use at least {MIN_PASSWORD_LENGTH} characters."), 400)
-    if password != confirm:
-        return page(heading, password_form(action, heading, token, "The two passwords don't match."), 400)
+def _needs_code(db: Session, token: str) -> bool:
     try:
-        apply_password_token(db, token, password[:200])
+        record, user = password_token_user(db, token)
+    except HTTPException:
+        return False  # the submit shows why the link can't be used
+    return reset_needs_code(record, user)
+
+
+def handle_password(
+    action: str, heading: str, token: str, password: str, confirm: str, db: Session, totp_code: str = ""
+) -> HTMLResponse:
+    ask = _needs_code(db, token)
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return page(heading, password_form(action, heading, token, f"Use at least {MIN_PASSWORD_LENGTH} characters.", ask), 400)
+    if password != confirm:
+        return page(heading, password_form(action, heading, token, "The two passwords don't match.", ask), 400)
+    try:
+        apply_password_token(db, token, password[:200], totp_code[:12])
     except HTTPException as exc:
+        if exc.status_code == 400 and ask and "code" in str(exc.detail):
+            return page(heading, password_form(action, heading, token, str(exc.detail), ask), 400)
         return error_page(exc)
     return page(
         "Password saved",
@@ -200,15 +221,21 @@ def set_password_submit(token: str = Form(""), password: str = Form(""), confirm
 
 
 @router.get("/reset-password", response_class=HTMLResponse)
-def reset_password_page(token: str = ""):
-    return page("Reset your password", password_form("/reset-password", "Choose a new password", token))
+def reset_password_page(token: str = "", db: Session = Depends(get_db)):
+    return page(
+        "Reset your password", password_form("/reset-password", "Choose a new password", token, ask_code=_needs_code(db, token))
+    )
 
 
 @router.post("/reset-password", response_class=HTMLResponse, dependencies=[Depends(login_limiter)])
 def reset_password_submit(
-    token: str = Form(""), password: str = Form(""), confirm: str = Form(""), db: Session = Depends(get_db)
+    token: str = Form(""),
+    password: str = Form(""),
+    confirm: str = Form(""),
+    totp_code: str = Form(""),
+    db: Session = Depends(get_db),
 ):
-    return handle_password("/reset-password", "Choose a new password", token, password, confirm, db)
+    return handle_password("/reset-password", "Choose a new password", token, password, confirm, db, totp_code)
 
 
 @router.get("/forgot-password", response_class=HTMLResponse)

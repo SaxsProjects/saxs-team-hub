@@ -9,6 +9,7 @@ import { describeAudit } from "../lib/activity";
 import { clock, firstName, shortDate } from "../lib/format";
 import { Avatar } from "./Avatar";
 import { GlobalSearch } from "./GlobalSearch";
+import { PasskeyOffer } from "./TrustedDevices";
 import { FOUNDER_NAV, MEMBER_NAV, SETTINGS_ITEM, type NavItem } from "./nav";
 import markLight from "../assets/logo-mark-light.png";
 import wordLight from "../assets/logo-wordmark-light.png";
@@ -80,6 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <UserMenu />
         </header>
         <main id="main" className="content" tabIndex={-1}>
+          <PasskeyOffer />
           {children}
         </main>
       </div>

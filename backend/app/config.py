@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     # Two tabs renewing at the same moment both present the same cookie; allow that briefly.
     session_renew_grace_seconds: int = 10
     session_cookie_secure: bool | None = None  # defaults to True in production
+    # Trusted devices: after a full sign-in (password + two-factor) a phone or computer can be trusted.
+    # It then unlocks with a passkey (Face ID, fingerprint, Windows Hello) or the password alone.
+    device_trust_days: int = 90  # trust ends after this many days without use
+    device_unlock_failures: int = 5  # wrong passwords on a device before it stops being trusted
+    # Passkeys. The relying party is the Team Hub web address (the first CORS origin unless set).
+    webauthn_rp_id: str = ""
+    # The Android app's signing certificate (SHA-256, public: it is in every APK). Passkeys made through
+    # the app report the app, not the website, as their origin.
+    android_signing_cert_sha256: str = "d63ac9a751b6acb7c0878729ffc0cdf0ab32f1465f0a16cfcf069b582181e8b7"
     # Interactive API docs at /docs. Always on outside production; in production only when set,
     # e.g. so the founder can use the API from a browser until the frontend is built.
     enable_api_docs: bool = False
@@ -137,6 +146,28 @@ class Settings(BaseSettings):
     def session_cookie_name(self) -> str:
         # The __Host- prefix makes browsers refuse the cookie unless it is Secure, host-only and Path=/.
         return "__Host-teamhub_session" if self.cookie_secure else "teamhub_session"
+
+    @property
+    def device_cookie_name(self) -> str:
+        return "__Host-teamhub_device" if self.cookie_secure else "teamhub_device"
+
+    @property
+    def passkey_rp_id(self) -> str:
+        from urllib.parse import urlparse
+
+        return self.webauthn_rp_id or (urlparse(self.cors_origin_list[0]).hostname or "localhost")
+
+    @property
+    def passkey_origins(self) -> list[str]:
+        """Where passkey sign-ins may come from: the web app, and the Android app identified by its key."""
+        import base64
+
+        origins = list(self.cors_origin_list)
+        cert = self.android_signing_cert_sha256.replace(":", "").strip()
+        if cert:
+            digest = base64.urlsafe_b64encode(bytes.fromhex(cert)).decode().rstrip("=")
+            origins.append(f"android:apk-key-hash:{digest}")
+        return origins
 
     @property
     def cors_origin_list(self) -> list[str]:

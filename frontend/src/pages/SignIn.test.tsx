@@ -112,3 +112,143 @@ describe("sign in", () => {
     expect(hasSession()).toBe(false);
   });
 });
+
+/** Pretend to be a phone: its browser name and (optionally) its passkey prompt. */
+function fakePhone(credentials?: { get: unknown }, userAgent?: string) {
+  if (userAgent) vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
+  if (credentials) Object.defineProperty(navigator, "credentials", { configurable: true, value: credentials });
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  delete (navigator as unknown as { credentials?: unknown }).credentials;
+});
+
+describe("trusted device", () => {
+  const DEVICE = { email: "thandi@example.com", full_name: "Thandi Mokoena", device_name: "Team Hub Android app", passkey: false };
+  const MEMBER = { ...ADMIN, id: 2, email: "thandi@example.com", role: "member", person_id: 1, totp_enabled: false, two_factor_required: false, full_name: "Thandi Mokoena" };
+
+  it("remembers the account and unlocks with the password alone", async () => {
+    const user = userEvent.setup();
+    const calls = renderApp((url, init) => {
+      if (url.endsWith("/api/auth/refresh")) return json(401, { detail: "Your sign-in has ended." });
+      if (url.endsWith("/api/auth/device")) return json(200, DEVICE);
+      if (url.endsWith("/api/auth/unlock")) {
+        return JSON.parse(String(init.body)).password === "right-password"
+          ? json(200, { access_token: "tok", token_type: "bearer", expires_in: 900 })
+          : json(401, { detail: "Wrong password. 4 more tries on this device." });
+      }
+      if (url.endsWith("/api/auth/me")) return json(200, MEMBER);
+      return json(200, []);
+    });
+
+    expect(await screen.findByText("Welcome back, Thandi.")).toBeInTheDocument();
+    expect(screen.getByText("thandi@example.com")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Email address")).not.toBeInTheDocument(); // no email to type
+    await user.type(screen.getByLabelText("Password"), "wrong");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("4 more tries");
+
+    await user.type(screen.getByLabelText("Password"), "right-password");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(hasSession()).toBe(true));
+    expect(calls.filter((c) => c.url.endsWith("/api/auth/unlock")).every((c) => c.init.credentials === "include")).toBe(true);
+    expect(calls.some((c) => c.url.endsWith("/api/auth/login"))).toBe(false); // no two-factor step
+  });
+
+  it("asks for the fingerprint or face straight away when a passkey is set up", async () => {
+    const get = vi.fn(async () => ({
+      id: "AQID",
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: "public-key",
+      response: {
+        clientDataJSON: new Uint8Array([4]).buffer,
+        authenticatorData: new Uint8Array([5]).buffer,
+        signature: new Uint8Array([6]).buffer,
+        userHandle: null,
+      },
+      getClientExtensionResults: () => ({}),
+    }));
+    fakePhone({ get }, "Mozilla/5.0 (Linux; Android 14)");
+    const calls = renderApp((url) => {
+      if (url.endsWith("/api/auth/refresh")) return json(401, { detail: "Your sign-in has ended." });
+      if (url.endsWith("/api/auth/device")) return json(200, { ...DEVICE, passkey: true });
+      if (url.endsWith("/api/auth/unlock/passkey/options")) return json(200, { challenge_id: 7, options: { challenge: "AAEC", rpId: "hub.saxsprojects.co.za", allowCredentials: [{ id: "AQID", type: "public-key" }] } });
+      if (url.endsWith("/api/auth/unlock/passkey")) return json(200, { access_token: "tok", token_type: "bearer", expires_in: 900 });
+      if (url.endsWith("/api/auth/me")) return json(200, MEMBER);
+      return json(200, []);
+    });
+    await waitFor(() => expect(hasSession()).toBe(true));
+    expect(get).toHaveBeenCalledOnce();
+    const sent = JSON.parse(String(calls.find((c) => c.url.endsWith("/api/auth/unlock/passkey"))!.init.body));
+    expect(sent.challenge_id).toBe(7);
+    expect(sent.credential.response.signature).toBe("Bg");
+  });
+
+  it("falls back to the password when the prompt is cancelled", async () => {
+    const user = userEvent.setup();
+    const get = vi.fn(async () => Promise.reject(new DOMException("cancelled", "NotAllowedError")));
+    fakePhone({ get });
+    renderApp((url) => {
+      if (url.endsWith("/api/auth/refresh")) return json(401, { detail: "Your sign-in has ended." });
+      if (url.endsWith("/api/auth/device")) return json(200, { ...DEVICE, passkey: true });
+      if (url.endsWith("/api/auth/unlock/passkey/options")) return json(200, { challenge_id: 7, options: { challenge: "AAEC", rpId: "x" } });
+      return json(200, []);
+    });
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(); // cancelling is not an error
+    await user.click(screen.getByRole("button", { name: "Not you? Use another account" }));
+    expect(await screen.findByLabelText("Email address")).toBeInTheDocument();
+  });
+
+  it("locks after 5 minutes in the background", async () => {
+    let hidden = false;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    const now = vi.spyOn(Date, "now");
+    const calls = renderApp((url) => {
+      if (url.endsWith("/api/auth/refresh")) return json(200, { access_token: "tok", token_type: "bearer", expires_in: 900 });
+      if (url.endsWith("/api/auth/device")) return json(200, DEVICE);
+      if (url.endsWith("/api/auth/me")) return json(200, MEMBER);
+      if (url.endsWith("/api/auth/logout")) return new Response(null, { status: 204 });
+      return json(200, []);
+    });
+    expect(await screen.findByRole("navigation")).toBeInTheDocument();
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/api/auth/device"))).toBe(true));
+
+    const t0 = Date.now();
+    now.mockReturnValue(t0);
+    hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    now.mockReturnValue(t0 + 4 * 60_000); // back within 5 minutes: still open
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(hasSession()).toBe(true);
+
+    hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    now.mockReturnValue(t0 + 10 * 60_000);
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(hasSession()).toBe(false));
+    expect(await screen.findByText("Welcome back, Thandi.")).toBeInTheDocument();
+    now.mockRestore();
+    delete (document as unknown as { hidden?: boolean }).hidden;
+  });
+
+  it("offers to keep a phone signed in, and sends the choice", async () => {
+    const user = userEvent.setup();
+    fakePhone(undefined, "Mozilla/5.0 (Linux; Android 14) Chrome/140.0");
+    const calls = renderApp((url) => {
+      if (url.endsWith("/api/auth/refresh")) return json(401, { detail: "Your sign-in has ended." });
+      if (url.endsWith("/api/auth/device")) return json(401, { detail: "This device is not trusted." });
+      return json(401, { detail: "Wrong email or password" });
+    });
+    const keep = await screen.findByRole("checkbox", { name: "Keep me signed in on this device" });
+    expect(keep).toBeChecked(); // a phone
+    await user.type(screen.getByLabelText("Email address"), "x@saxsprojects.co.za");
+    await user.type(screen.getByLabelText("Password"), "pw");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByRole("alert");
+    expect(JSON.parse(String(calls.find((c) => c.url.endsWith("/api/auth/login"))!.init.body)).trust_device).toBe(true);
+  });
+});

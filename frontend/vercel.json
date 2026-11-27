@@ -3,7 +3,7 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/((?!assets/|icons/|manifest.webmanifest).*)", "destination": "/index.html" }],
+  "rewrites": [{ "source": "/((?!assets/|icons/|manifest.webmanifest|.well-known/).*)", "destination": "/index.html" }],
   "headers": [
     {
       "source": "/(.*)",
@@ -20,6 +20,10 @@
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
       ]
+    },
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [{ "key": "Content-Type", "value": "application/json" }]
     },
     {
       "source": "/assets/(.*)",

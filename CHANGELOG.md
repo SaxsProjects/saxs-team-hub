@@ -4,6 +4,22 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.7.0] - 2026-11-27
+
+### Added
+- **Stay signed in on your phone.** "Keep me signed in on this device" trusts a phone or computer after one full
+  sign-in. After that the app opens with **Welcome back** and your email already filled in: unlock with Face ID,
+  your fingerprint or face, or Windows Hello (passkeys), or your password alone. No two-factor code.
+- **Locks after 5 minutes in the background**, and opens again with the fingerprint, face or password.
+- **Trusted devices** in Settings > Security: see each device and when it was last used, remove any of them, and
+  set up fingerprint or face unlock. A new trusted device sends you an email.
+- **Android app:** passkeys work inside the app (the website names the app in `/.well-known/assetlinks.json`).
+
+### Changed
+- **Forgot password now asks for your two-factor code** (when two-factor is on) as well as the email link, and a
+  reset removes every trusted device.
+- Trust ends after 90 days without use, or after 5 wrong passwords on the device; then the full sign-in is needed.
+
 ## [1.6.0] - 2026-11-27
 
 ### Added

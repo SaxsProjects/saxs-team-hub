@@ -1,13 +1,146 @@
-import { AlertCircle, ArrowLeft } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertCircle, ArrowLeft, Fingerprint } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { API_URL, signOutPending } from "../api/client";
+import type { TrustedDeviceInfo } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { AuthLayout } from "../components/AuthLayout";
 import { greeting } from "../lib/format";
+import { cancelled, unlockName } from "../lib/passkey";
+
+/** Phones and the installed apps are personal devices: keep them signed in unless the person says no. */
+function personalDevice(): boolean {
+  const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean }; __TAURI_INTERNALS__?: unknown };
+  return !!w.Capacitor?.isNativePlatform?.() || !!w.__TAURI_INTERNALS__ || /Android|iPhone|iPad/.test(navigator.userAgent);
+}
+
+/** Sign in. A trusted device gets the "Welcome back" unlock screen; anyone else the full sign-in. */
+export function SignIn() {
+  const { device } = useAuth();
+  const [full, setFull] = useState(false);
+  if (device && !full) return <Unlock device={device} onOtherAccount={() => setFull(true)} />;
+  return <FullSignIn />;
+}
+
+function ErrorBox({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <div className="form-error" role="alert">
+      <AlertCircle size={16} aria-hidden="true" />
+      <span>{error}</span>
+    </div>
+  );
+}
+
+/** "Welcome back": the email is remembered, so only the passkey (or the password) is needed. */
+function Unlock({ device, onOtherAccount }: { device: TrustedDeviceInfo; onOtherAccount: () => void }) {
+  const { unlock, unlockWithPasskey, forgetDevice } = useAuth();
+  const [password, setPassword] = useState("");
+  const [usePassword, setUsePassword] = useState(!device.passkey);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const tried = useRef(false);
+  const method = unlockName();
+
+  const tryPasskey = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await unlockWithPasskey();
+    } catch (e) {
+      if (!cancelled(e)) setError(e instanceof Error ? e.message : "That didn't work. Use your password instead.");
+      setUsePassword(true);
+    } finally {
+      setBusy(false);
+    }
+  }, [unlockWithPasskey]);
+
+  // Ask for the face or fingerprint straight away, once, as the app opens.
+  useEffect(() => {
+    if (device.passkey && !tried.current) {
+      tried.current = true;
+      void tryPasskey();
+    }
+  }, [device.passkey, tryPasskey]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!password) return setError("Enter your password.");
+    setError(null);
+    setBusy(true);
+    try {
+      await unlock(password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unlock failed.");
+      setPassword("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const name = device.full_name?.split(" ")[0];
+  return (
+    <AuthLayout title={name ? `Welcome back, ${name}.` : "Welcome back."} subtitle={device.email}>
+      <form className="auth-form" onSubmit={submit} noValidate>
+        {device.passkey && (
+          <button type="button" className="btn btn-primary btn-block btn-lg" disabled={busy} onClick={() => void tryPasskey()}>
+            <Fingerprint size={18} aria-hidden="true" /> {busy && !usePassword ? "Waiting…" : `Unlock with ${method}`}
+          </button>
+        )}
+        {usePassword ? (
+          <>
+            <input type="email" autoComplete="username" value={device.email} readOnly hidden />
+            <div className="field">
+              <label htmlFor="unlock-password">Password</label>
+              <input
+                id="unlock-password"
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Enter your password"
+                value={password}
+                aria-invalid={!!error}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <ErrorBox error={error} />
+            <button className={`btn btn-block btn-lg ${device.passkey ? "btn-secondary" : "btn-primary"}`} disabled={busy}>
+              {busy && usePassword ? "Unlocking…" : "Unlock"}
+            </button>
+          </>
+        ) : (
+          <>
+            <ErrorBox error={error} />
+            <button type="button" className="link-btn" onClick={() => setUsePassword(true)}>
+              Use password instead
+            </button>
+          </>
+        )}
+        <div className="auth-row-end">
+          <a className="link-btn" href={`${API_URL}/forgot-password`}>
+            Forgot password?
+          </a>
+        </div>
+      </form>
+      <hr className="divider auth-sep" />
+      <button
+        type="button"
+        className="link-btn"
+        onClick={() => {
+          void forgetDevice();
+          onOtherAccount();
+        }}
+      >
+        Not you? Use another account
+      </button>
+    </AuthLayout>
+  );
+}
 
 /** Sign in, then (for anyone with two-factor on) the "One more step." code screen. */
-export function SignIn() {
+function FullSignIn() {
   const { signIn } = useAuth();
+  const [trust, setTrust] = useState(personalDevice);
   const [step, setStep] = useState<"password" | "code">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +160,7 @@ export function SignIn() {
     setError(null);
     setBusy(true);
     try {
-      const result = await signIn(email.trim(), password, step === "code" ? code : undefined);
+      const result = await signIn(email.trim(), password, step === "code" ? code : undefined, trust);
       if (result === "totp_required") setStep("code");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed.");
@@ -37,12 +170,7 @@ export function SignIn() {
     }
   }
 
-  const errorBox = error && (
-    <div className="form-error" role="alert">
-      <AlertCircle size={16} aria-hidden="true" />
-      <span>{error}</span>
-    </div>
-  );
+  const errorBox = <ErrorBox error={error} />;
 
   if (step === "code") {
     return (
@@ -119,11 +247,16 @@ export function SignIn() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-        <div className="auth-row-end">
+        <div className="auth-row-between">
+          <label className="check-row">
+            <input type="checkbox" checked={trust} onChange={(e) => setTrust(e.target.checked)} />
+            <span>Keep me signed in on this device</span>
+          </label>
           <a className="link-btn" href={`${API_URL}/forgot-password`}>
             Forgot password?
           </a>
         </div>
+        {trust && <p className="field-hint">Next time, unlock with your password or {unlockName()}. Only tick this on your own device.</p>}
         {errorBox}
         <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}

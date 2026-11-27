@@ -160,8 +160,21 @@ async function errorMessage(res: Response): Promise<string> {
   return `Request failed (${res.status})`;
 }
 
-/** Endpoints that set or read the HttpOnly sign-in cookie. Nothing else sends cookies. */
-const COOKIE_PATHS = ["/api/auth/login", "/api/auth/change-password"];
+/** Endpoints that start a sign-in through a cookie: a 401 there is an answer, not an expired pass. */
+const COOKIE_PATHS = [
+  "/api/auth/login",
+  "/api/auth/change-password",
+  "/api/auth/device",
+  "/api/auth/unlock",
+  "/api/auth/unlock/passkey/options",
+  "/api/auth/unlock/passkey",
+  "/api/auth/forget-device",
+];
+
+/** Endpoints that read the HttpOnly sign-in or trusted-device cookie. Nothing else sends cookies. */
+function sendsCookies(path: string): boolean {
+  return COOKIE_PATHS.includes(path) || path === "/api/auth/passkeys/options" || path === "/api/auth/passkeys" || path.startsWith("/api/auth/devices");
+}
 
 async function send(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
   if (session && session.expiresAt - Date.now() < 5_000 && !COOKIE_PATHS.includes(path)) await renew();
@@ -175,7 +188,7 @@ async function send(path: string, init: RequestInit = {}, retried = false): Prom
     res = await fetch(`${API_URL}${path}`, {
       ...init,
       headers,
-      credentials: COOKIE_PATHS.includes(path) ? "include" : "omit",
+      credentials: sendsCookies(path) ? "include" : "omit",
       referrerPolicy: "no-referrer",
     });
   } catch {

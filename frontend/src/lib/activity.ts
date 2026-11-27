@@ -11,6 +11,11 @@ const TITLES: Record<string, string> = {
   "auth.login_locked": "Sign-in blocked after failed attempts",
   "auth.totp_lock": "Two-factor locked after wrong codes",
   "auth.session_token_reused": "Old sign-in pass reused; session ended",
+  "auth.unlock": "Unlocked a trusted device",
+  "auth.device_trusted": "New trusted device",
+  "auth.device_removed": "Trusted device removed",
+  "auth.device_untrusted": "Device untrusted after wrong passwords",
+  "auth.passkey_added": "Passkey set up (fingerprint, face or Windows Hello)",
   "settings.notifications": "Notification settings changed",
   "user.create_admin": "Admin account created",
   "user.avatar_set": "Profile picture updated",
@@ -85,9 +90,9 @@ export type ActivityTone = "brand" | "success" | "amber";
 
 export function describeAudit(entry: AuditEntry): { title: string; detail: string; tone: ActivityTone } {
   const title = TITLES[entry.action] ?? fallbackTitle(entry.action);
-  const number = (entry.after?.number ?? entry.after?.statement_number ?? entry.after?.reference) as string | undefined;
+  const number = (entry.after?.number ?? entry.after?.statement_number ?? entry.after?.reference ?? entry.after?.device) as string | undefined;
   const detail = number ? String(number) : entry.entity_id ? `${entry.entity.replace(/_/g, " ")} #${entry.entity_id}` : "";
-  const tone: ActivityTone = /locked|totp_lock|reused|decline|cancel|expire|revoke/.test(entry.action)
+  const tone: ActivityTone = /locked|totp_lock|reused|untrusted|device_trusted|decline|cancel|expire|revoke/.test(entry.action)
     ? "amber"
     : /accept|confirm|paid|enabled|lock_shares/.test(entry.action)
     ? "success"

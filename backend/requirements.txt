@@ -13,3 +13,4 @@ cryptography==50.0.2
 python-multipart==0.0.34
 fpdf2==2.9.0
 Pillow==13.0.0
+webauthn==3.0.1

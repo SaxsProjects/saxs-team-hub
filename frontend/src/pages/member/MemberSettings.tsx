@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { ApiError, api, setSession } from "../../api/client";
 import type { MaskedBanking, Person, TokenOut } from "../../api/types";
 import { useAuth } from "../../auth/AuthContext";
+import { TrustedDevices } from "../../components/TrustedDevices";
 import { Dialog, ErrorNote, PageHead, Skeleton } from "../../components/ui";
 import "../overview.css";
 import "../pages.css";
@@ -133,6 +134,8 @@ export function MemberSettings() {
                 Change password
               </button>
             </div>
+            <hr className="divider" />
+            <TrustedDevices />
             <button className="link-btn" style={{ justifySelf: "start", marginTop: 18 }} onClick={() => signOut()}>
               Sign out of this account
             </button>

@@ -85,6 +85,59 @@ class SignInSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(200))
 
 
+class TrustedDevice(Base):
+    """A phone or computer the person chose to trust after a full sign-in (password and two-factor).
+
+    On a trusted device they unlock with a passkey (Face ID, fingerprint, Windows Hello) or their password
+    alone. The device cookie holds a random token; only its hash is stored. Trust ends when it is removed,
+    after a password reset, or after `device_trust_days` without use.
+    """
+
+    __tablename__ = "trusted_devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_used_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    failed_unlocks: Mapped[int] = mapped_column(Integer, default=0)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_reason: Mapped[str | None] = mapped_column(String(32))
+
+    passkeys: Mapped[list["Passkey"]] = relationship(back_populates="device", cascade="all, delete-orphan")
+
+
+class Passkey(Base):
+    """A WebAuthn credential on a trusted device. Only the public key is stored."""
+
+    __tablename__ = "passkeys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("trusted_devices.id", ondelete="CASCADE"), index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    device: Mapped[TrustedDevice] = relationship(back_populates="passkeys")
+
+
+class WebAuthnChallenge(Base):
+    """A one-time passkey challenge, valid for a few minutes."""
+
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("trusted_devices.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(16))  # register | unlock
+    challenge: Mapped[bytes] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
 class ActionToken(Base):
     """One-time tokens emailed to people (e.g. set your password). Only the hash is stored."""
 

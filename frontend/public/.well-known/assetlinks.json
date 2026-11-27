@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls", "delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "za.co.saxsprojects.teamhub",
+      "sha256_cert_fingerprints": [
+        "D6:3A:C9:A7:51:B6:AC:B7:C0:87:87:29:FF:C0:CD:F0:AB:32:F1:46:5F:0A:16:CF:CF:06:9B:58:21:81:E8:B7"
+      ]
+    }
+  }
+]
