@@ -4,7 +4,7 @@ import { api, post } from "../../api/client";
 import { useViewFile } from "../../components/DocumentPreview";
 import type { Dashboard, Payout, Project } from "../../api/types";
 import { Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, RowButton, Skeleton, StatCard, Tabs, useSelectedFromUrl } from "../../components/ui";
-import { fullDay, plural, rands, shortDate, shortDay, todaySA } from "../../lib/format";
+import { fullDay, percent, plural, rands, shortDate, shortDay, todaySA } from "../../lib/format";
 import { calc, statementPath } from "../../lib/payouts";
 import { usePeople } from "../../lib/people";
 import "../overview.css";
@@ -225,6 +225,7 @@ function RecordEft({ payout: p, name, source, today, onPaid }: { payout: Payout;
       <p className="detail-amount num" style={{ marginTop: 4 }}>
         {rands(p.amount_cents)}
       </p>
+      <Workings payout={p} />
       {p.paid_at ? (
         <dl className="kv" style={{ marginTop: 18 }}>
           <div>
@@ -263,5 +264,45 @@ function RecordEft({ payout: p, name, source, today, onPaid }: { payout: Payout;
         </div>
       )}
     </section>
+  );
+}
+
+/** "How this was worked out": the numbers behind the amount, in plain words. */
+export function Workings({ payout: p }: { payout: Payout }) {
+  const c = calc(p) ?? {};
+  const rows: [string, string][] = [];
+  if (p.kind === "task_fee") {
+    if (c.fee_cents !== undefined) rows.push(["Agreed fee for the task", rands(c.fee_cents)]);
+    rows.push(["Terms", c.fee_terms === "deferred" ? "Paid after the client's first payment" : "Paid 7 days after the work is accepted"]);
+  } else {
+    if (c.received_to_date_cents !== undefined) rows.push(["Client money received so far (excl. VAT)", rands(c.received_to_date_cents)]);
+    if (c.costs_to_date_cents) rows.push(["Less project costs", rands(c.costs_to_date_cents)]);
+    if (c.net_income_cents !== undefined) rows.push(["Net project income", rands(c.net_income_cents)]);
+    if (c.work_share_bp !== undefined) rows.push(["Agreed work share", percent(c.work_share_bp)]);
+    if (c.rate_bp !== undefined) rows.push(["Revenue-share rate", percent(c.rate_bp)]);
+    if (c.earned_to_date_cents !== undefined) rows.push(["Earned to date", rands(c.earned_to_date_cents)]);
+    if (c.previously_allocated_cents) rows.push(["Less already allocated", rands(c.previously_allocated_cents)]);
+  }
+  if (!rows.length) return null;
+  return (
+    <details className="workings" style={{ marginTop: 14 }}>
+      <summary className="row-title" style={{ cursor: "pointer" }}>
+        How this was worked out
+      </summary>
+      <dl className="kv" style={{ marginTop: 8 }}>
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd className="num">{v}</dd>
+          </div>
+        ))}
+        <div>
+          <dt>This payout</dt>
+          <dd className="num">
+            <strong>{rands(p.amount_cents)}</strong>
+          </dd>
+        </div>
+      </dl>
+    </details>
   );
 }
