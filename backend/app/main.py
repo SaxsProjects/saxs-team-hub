@@ -14,6 +14,7 @@ from .db import get_db
 from .jobs import run_daily
 from .pdf import load_signature
 from .routers import (
+    assistant,
     auth,
     avatars,
     certificates,
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
         reports,
         proposals,
         certificates,
+        assistant,
     ):
         app.include_router(module.router)
     app.include_router(offers.public)

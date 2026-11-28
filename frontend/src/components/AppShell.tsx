@@ -1,11 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronRight, CircleHelp, LogOut, Menu, X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { api } from "../api/client";
-import type { AuditEntry, Dashboard, MemberOverview } from "../api/types";
+import { api, post } from "../api/client";
+import type { Dashboard, NotificationList } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
-import { describeAudit } from "../lib/activity";
 import { clock, firstName, shortDate } from "../lib/format";
 import { Avatar } from "./Avatar";
 import { GlobalSearch } from "./GlobalSearch";
@@ -165,148 +164,66 @@ function UserMenu() {
   );
 }
 
-interface Notice {
-  id: string;
-  title: string;
-  detail: string;
-  to: string;
-}
-
-const SEEN_KEY = "teamhub.activitySeen";
-
-function readSeen(isAdmin: boolean): number {
-  if (!isAdmin) return 0;
-  try {
-    return Number(localStorage.getItem(SEEN_KEY)) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function writeSeen(id: number): void {
-  try {
-    localStorage.setItem(SEEN_KEY, String(id));
-  } catch {
-    /* private mode: the dot just shows again next time */
-  }
-}
-
-/** Where an activity item leads: the record itself where a page can open it, otherwise its history. */
-function auditLink(a: AuditEntry): string {
-  const id = a.entity_id;
-  switch (a.entity) {
-    case "person":
-      return id ? `/team/${id}` : "/team";
-    case "offer":
-      return "/team";
-    case "project":
-      return id ? `/projects/${id}` : "/projects";
-    case "task_order":
-      return id ? `/task-orders?open=${id}` : "/task-orders";
-    case "invoice":
-      return id ? `/finance/invoices?open=${id}` : "/finance/invoices";
-    case "quotation":
-      return id ? `/finance/quotations?open=${id}` : "/finance/quotations";
-    case "client":
-      return id ? `/finance/clients?open=${id}` : "/finance/clients";
-    case "payout":
-      return id ? `/payouts?open=${id}` : "/payouts";
-    default:
-      return `/audit?event=${a.id}`;
-  }
-}
-
+/** The bell: the user's own notifications from the server, with the number still unread. */
 function Notifications({ isAdmin }: { isAdmin: boolean }) {
   const { open, setOpen, ref } = usePopover();
   const navigate = useNavigate();
-  const audit = useQuery({
-    queryKey: ["audit", 6],
-    queryFn: () => api<AuditEntry[]>("/api/audit?scope=workspace&limit=6"),
-    enabled: isAdmin,
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api<NotificationList>("/api/notifications?limit=20"),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
-  const overview = useQuery({
-    queryKey: ["me-overview"],
-    queryFn: () => api<MemberOverview>("/api/me/overview"),
-    enabled: !isAdmin,
-  });
-
-  const notices: Notice[] = useMemo(() => {
-    if (isAdmin) {
-      return (audit.data ?? []).map((a) => {
-        const d = describeAudit(a);
-        const when = `${shortDate(a.at)} ${clock(a.at)}`;
-        return {
-          id: `a${a.id}`,
-          title: d.title,
-          detail: d.detail ? `${d.detail} · ${when}` : when,
-          to: auditLink(a),
-        };
-      });
-    }
-    const o = overview.data;
-    if (!o) return [];
-    const out: Notice[] = [];
-    if (o.task_orders_to_confirm)
-      out.push({
-        id: "confirm",
-        title: `${o.task_orders_to_confirm} Task Order${o.task_orders_to_confirm > 1 ? "s" : ""} to confirm`,
-        detail: "Accept or decline the new work",
-        to: "/my/task-orders",
-      });
-    if (o.can_request_payment_count)
-      out.push({
-        id: "pay",
-        title: "A payout is ready to request",
-        detail: "Ask for payment of what is due",
-        to: "/my/payouts",
-      });
-    if (o.onboarding_open)
-      out.push({
-        id: "onb",
-        title: "Finish your onboarding",
-        detail: `${o.onboarding_open} step${o.onboarding_open > 1 ? "s" : ""} left`,
-        to: "/my/onboarding",
-      });
-    return out;
-  }, [isAdmin, audit.data, overview.data]);
-
-  // The dot means "something new since you last looked", not "there is activity".
-  const newest = isAdmin ? (audit.data?.[0]?.id ?? 0) : notices.length;
-  const [seen, setSeen] = useState(() => readSeen(isAdmin));
-  const unread = isAdmin ? newest > seen : notices.length > 0;
-  const toggle = () => {
-    if (!open && isAdmin && newest) {
-      setSeen(newest);
-      writeSeen(newest);
-    }
-    setOpen(!open);
-  };
+  const unread = list.data?.unread ?? 0;
+  const items = list.data?.items ?? [];
+  const refresh = () => qc.invalidateQueries({ queryKey: ["notifications"] });
+  const readOne = useMutation({ mutationFn: (id: number) => post("/api/notifications/read", { ids: [id] }), onSettled: refresh });
+  const readAll = useMutation({ mutationFn: () => post("/api/notifications/read-all"), onSettled: refresh });
+  const label = unread ? `Notifications: ${unread} unread` : "Notifications";
 
   return (
     <div className="popover-anchor" ref={ref}>
-      <button className="icon-btn" aria-label={unread ? "Notifications: new activity" : "Notifications"} aria-expanded={open} onClick={toggle}>
+      <button className="icon-btn" aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)}>
         <Bell size={22} strokeWidth={1.75} aria-hidden="true" />
-        {unread && <span className="bell-dot" aria-hidden="true" />}
+        {unread > 0 && (
+          <span className="bell-count" aria-hidden="true">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
       </button>
       {open && (
         <div className="popover notices" role="dialog" aria-label="Notifications">
-          <p className="popover-title">{isAdmin ? "Latest activity" : "For you"}</p>
-          {notices.length === 0 ? (
-            <p className="empty">You are all caught up.</p>
-          ) : (
-            notices.map((n) => (
-              <button
-                key={n.id}
-                className="notice"
-                onClick={() => {
-                  setOpen(false);
-                  navigate(n.to);
-                }}
-              >
-                <span className="notice-title">{n.title}</span>
-                <span className="notice-detail">{n.detail}</span>
+          <div className="popover-head">
+            <p className="popover-title">{isAdmin ? "Notifications" : "For you"}</p>
+            {unread > 0 && (
+              <button className="link-btn" onClick={() => readAll.mutate()} disabled={readAll.isPending}>
+                Mark all as read
               </button>
-            ))
+            )}
+          </div>
+          {items.length === 0 ? (
+            <p className="empty">{list.isLoading ? "Loading..." : "You are all caught up."}</p>
+          ) : (
+            <div className="notice-list">
+              {items.map((n) => (
+                <button
+                  key={n.id}
+                  className={`notice${n.read_at ? "" : " is-unread"}`}
+                  onClick={() => {
+                    if (!n.read_at) readOne.mutate(n.id);
+                    setOpen(false);
+                    if (n.link) navigate(n.link);
+                  }}
+                >
+                  <span className="notice-title">{n.title}</span>
+                  {n.body && <span className="notice-detail notice-body">{n.body}</span>}
+                  <span className="notice-detail">
+                    {shortDate(n.created_at)} {clock(n.created_at)}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}
