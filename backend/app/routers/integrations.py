@@ -4,10 +4,15 @@ A key is made by the founder (two-factor required), shown once, stored only as a
 scopes. Keys can read clients, quotations, invoices and enquiries and save *draft* proposals. Nothing here can
 issue a document, record a payment, change a payout or move money: those actions stay with the founder in the
 hub. Every draft a system saves rings the founder's bell and is in the audit history under the key's name.
+
+No personal information leaves the hub through this API (POPIA s19, data minimisation): no names, email
+addresses, phone numbers, addresses, contact people, free-text messages, document titles, notes or line
+descriptions. Other systems may pass what they read to outside AI services, so they get IDs, statuses,
+dates and amounts only. The founder sees the full record in the hub.
 """
 
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -19,12 +24,10 @@ from ..db import get_db, utcnow
 from ..deps import RateLimiter, require_admin
 from ..models import ApiKey, Client, Enquiry, Invoice, Proposal, Quotation, User
 from ..notifications import notify_admins
-from ..schemas_finance import ClientOut, InvoiceOut, QuotationOut
 from ..security import hash_token
 from ..services import audit
-from .enquiries import EnquiryOut
 from .finance import get_client, invoice_out
-from .proposals import ProposalFields, ProposalOut, Service, _apply, _recalculate
+from .proposals import ProposalFields, Service, _apply, _recalculate
 
 Scope = Literal["clients:read", "quotations:read", "invoices:read", "enquiries:read", "proposals:draft"]
 SCOPES: tuple[str, ...] = Scope.__args__
@@ -114,24 +117,81 @@ def require_scope(scope: str):
     return check
 
 
-@router.get("/clients", response_model=list[ClientOut])
+# ---- Outputs: IDs, statuses, dates and amounts only. Never personal information. ----------------------------
+
+
+class HubClient(BaseModel):
+    id: int
+    kind: str
+    label: str  # "Client 12"; the real name stays in the hub
+    created_at: datetime
+
+
+class HubDocument(BaseModel):
+    id: int
+    number: str | None
+    client_id: int
+    project_id: int | None
+    status: str
+    issue_date: date | None
+    subtotal_cents: int
+    vat_cents: int
+    total_cents: int
+
+
+class HubInvoice(HubDocument):
+    due_date: date | None
+    paid_cents: int
+    credited_cents: int
+    balance_cents: int
+    overdue: bool
+
+
+class HubEnquiry(BaseModel):
+    id: int
+    service: str | None
+    source: str
+    status: str
+    client_id: int | None
+    created_at: datetime
+
+
+class HubProposal(BaseModel):
+    id: int
+    client_id: int
+    status: str
+    service: str
+
+
+def _doc(d) -> dict:
+    return {f: getattr(d, f) for f in HubDocument.model_fields}
+
+
+@router.get("/clients", response_model=list[HubClient])
 def api_clients(db: Session = Depends(get_db), _: ApiKey = Depends(require_scope("clients:read"))):
-    return db.scalars(select(Client).order_by(Client.name)).all()
+    rows = db.scalars(select(Client).order_by(Client.id)).all()
+    return [HubClient(id=c.id, kind=c.kind, label=f"Client {c.id}", created_at=c.created_at) for c in rows]
 
 
-@router.get("/quotations", response_model=list[QuotationOut])
+@router.get("/quotations", response_model=list[HubDocument])
 def api_quotations(db: Session = Depends(get_db), _: ApiKey = Depends(require_scope("quotations:read"))):
-    return db.scalars(select(Quotation).order_by(Quotation.created_at.desc()).limit(500)).all()
+    rows = db.scalars(select(Quotation).order_by(Quotation.created_at.desc()).limit(500))
+    return [HubDocument(**_doc(q)) for q in rows]
 
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+@router.get("/invoices", response_model=list[HubInvoice])
 def api_invoices(db: Session = Depends(get_db), _: ApiKey = Depends(require_scope("invoices:read"))):
-    return [invoice_out(i) for i in db.scalars(select(Invoice).order_by(Invoice.created_at.desc()).limit(500))]
+    out = []
+    for i in db.scalars(select(Invoice).order_by(Invoice.created_at.desc()).limit(500)):
+        full = invoice_out(i)
+        out.append(HubInvoice(**{f: getattr(full, f) for f in HubInvoice.model_fields}))
+    return out
 
 
-@router.get("/enquiries", response_model=list[EnquiryOut])
+@router.get("/enquiries", response_model=list[HubEnquiry])
 def api_enquiries(db: Session = Depends(get_db), _: ApiKey = Depends(require_scope("enquiries:read"))):
-    return [EnquiryOut.of(e) for e in db.scalars(select(Enquiry).order_by(Enquiry.created_at.desc()).limit(500))]
+    rows = db.scalars(select(Enquiry).order_by(Enquiry.created_at.desc()).limit(500))
+    return [HubEnquiry(**{f: getattr(e, f) for f in HubEnquiry.model_fields}) for e in rows]
 
 
 class DraftProposalIn(ProposalFields):
@@ -140,7 +200,7 @@ class DraftProposalIn(ProposalFields):
     title: str = Field(min_length=2, max_length=200)
 
 
-@router.post("/proposals", response_model=ProposalOut, status_code=201)
+@router.post("/proposals", response_model=HubProposal, status_code=201)
 def api_draft_proposal(
     body: DraftProposalIn, db: Session = Depends(get_db), key: ApiKey = Depends(require_scope("proposals:draft"))
 ):
@@ -155,4 +215,4 @@ def api_draft_proposal(
     audit(db, actor, "proposal.draft_from_api", "proposal", p.id, after={"service": p.service, "key_id": key.id})
     notify_admins(db, "system", f"Draft proposal from {key.name}", p.title, f"/proposals?open={p.id}")
     db.commit()
-    return p
+    return HubProposal(id=p.id, client_id=p.client_id, status=p.status, service=p.service)

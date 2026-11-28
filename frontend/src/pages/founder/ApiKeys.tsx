@@ -6,10 +6,10 @@ import { Dialog, Field, FormError, Skeleton } from "../../components/ui";
 import { shortDate } from "../../lib/format";
 
 const SCOPES: { key: ApiKeyScope; label: string }[] = [
-  { key: "clients:read", label: "Read clients" },
+  { key: "clients:read", label: "Read clients (IDs only, no names or contact details)" },
   { key: "quotations:read", label: "Read quotations" },
   { key: "invoices:read", label: "Read invoices" },
-  { key: "enquiries:read", label: "Read website enquiries" },
+  { key: "enquiries:read", label: "Read website enquiries (service and status only)" },
   { key: "proposals:draft", label: "Save draft proposals (you review and issue them)" },
 ];
 
@@ -30,7 +30,7 @@ export function ApiKeysCard() {
       <div className="card-head">
         <div>
           <h3 className="card-title">Connected systems</h3>
-          <p className="card-sub">Keys for SAXI-OS and other company systems. They can read and save drafts; only you issue documents and handle money.</p>
+          <p className="card-sub">Keys for SAXI-OS and other company systems. They see IDs, statuses and amounts only, never names, emails or phone numbers, and can save drafts; only you issue documents and handle money.</p>
         </div>
         <button className="btn btn-secondary" onClick={() => setOpen(true)}>
           New key

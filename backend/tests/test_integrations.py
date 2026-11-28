@@ -50,10 +50,54 @@ def test_a_system_can_only_save_a_draft_proposal(client, admin):
         json={"client_id": c["id"], "service": "website", "title": "Website for Glow Salon", "need": "A new site"},
     )
     assert r.status_code == 201, r.text
-    assert r.json()["status"] == "draft" and r.json()["number"] is None
+    assert r.json()["status"] == "draft" and "number" not in r.json()
     with SessionLocal() as db:
         assert db.query(Notification).filter(Notification.title == "Draft proposal from SAXI-OS").count() >= 1
     # There is no route to issue, pay or change money with a key.
     pid = r.json()["id"]
     assert client.post(f"/api/proposals/{pid}/issue", headers=h).status_code == 401
     assert client.post("/api/integrations/v1/proposals/1/issue", headers=h).status_code in (404, 405)
+
+
+def test_no_personal_information_leaves_through_the_api(client, admin):
+    """Other systems may pass what they read to outside AI services, so the API returns no personal data."""
+    from app.models import Enquiry
+
+    c = client.post(
+        "/api/clients",
+        headers=admin,
+        json={
+            "name": "Thandi Nkosi",
+            "kind": "individual",
+            "email": "thandi@example.com",
+            "phone": "0821234567",
+            "address": "12 Oak St",
+        },
+    ).json()
+    with SessionLocal() as db:
+        db.add(
+            Enquiry(
+                name="Sipho Dube",
+                email="sipho@example.com",
+                phone="0731112222",
+                organisation="Dube Plumbing",
+                message="Call me on 0731112222",
+                service="website",
+            )
+        )
+        db.commit()
+    made = make_key(client, admin, ["clients:read", "quotations:read", "invoices:read", "enquiries:read", "proposals:draft"])
+    h = {"X-Api-Key": made["key"]}
+    text = ""
+    for path in ("clients", "quotations", "invoices", "enquiries"):
+        r = client.get(f"/api/integrations/v1/{path}", headers=h)
+        assert r.status_code == 200, r.text
+        text += r.text
+    r = client.post(
+        "/api/integrations/v1/proposals", headers=h, json={"client_id": c["id"], "title": "Website", "service": "website"}
+    )
+    assert r.status_code == 201
+    text += r.text
+    for secret in ("Thandi", "Nkosi", "thandi@", "0821234567", "Oak St", "Sipho", "Dube", "sipho@", "0731112222"):
+        assert secret not in text, secret
+    assert f"Client {c['id']}" in text
