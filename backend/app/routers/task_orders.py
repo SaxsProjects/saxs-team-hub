@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_admin, require_member
 from ..models import Payout, TaskOrder, User
+from ..notifications import notify_admins, notify_person
 from ..numbering import allocate_number
+from ..payouts import format_zar
 from ..schemas import (
     TaskOrderAccept,
     TaskOrderAcceptedOut,
@@ -93,6 +95,14 @@ def create_task_order(body: TaskOrderIn, db: Session = Depends(get_db), admin: U
         order.id,
         after={"number": order.number, "person_id": person.id, "fee_cents": order.fee_cents, "fee_terms": order.fee_terms},
     )
+    notify_person(
+        db,
+        person,
+        "task_orders",
+        f"New task offered: {order.number}",
+        f"{order.title} for {format_zar(order.fee_cents)}, due {order.due_on:%d %b %Y}. Confirm or decline it.",
+        "/my/task-orders",
+    )
     db.commit()
     return task_order_out(order)
 
@@ -152,6 +162,7 @@ def cancel_task_order(order_id: int, body: TaskOrderNote, db: Session = Depends(
     order.status = "cancelled"
     order.closed_reason = body.note.strip()
     audit(db, admin.email, "task_order.cancel", "task_order", order.id, after={"reason": order.closed_reason})
+    notify_person(db, order.person, "task_orders", f"Task cancelled: {order.number}", order.closed_reason, "/my/task-orders")
     db.commit()
     return task_order_out(order)
 
@@ -165,6 +176,7 @@ def request_changes(order_id: int, body: TaskOrderNote, db: Session = Depends(ge
     order.review_note = body.note.strip()
     order.review_due_on = None
     audit(db, admin.email, "task_order.request_changes", "task_order", order.id, after={"note": order.review_note})
+    notify_person(db, order.person, "task_orders", f"Changes requested: {order.number}", order.review_note, "/my/task-orders")
     db.commit()
     return task_order_out(order)
 
@@ -208,6 +220,15 @@ def accept_task_order(order_id: int, body: TaskOrderAccept, db: Session = Depend
         payout.id,
         after={"person_id": order.person_id, "amount_cents": payout.amount_cents, "due_at": str(payout.due_at)},
     )
+    notify_person(
+        db,
+        order.person,
+        "task_orders",
+        f"Task accepted: {order.number}",
+        f"Your fee of {format_zar(payout.amount_cents)} is on statement {payout.statement_number}"
+        + (f", due {payout.due_at:%d %b %Y}." if payout.due_at else "."),
+        "/my/payouts",
+    )
     db.commit()
     return TaskOrderAcceptedOut(task_order=task_order_out(order), payout=payout)
 
@@ -236,6 +257,9 @@ def confirm_task_order(order_id: int, db: Session = Depends(get_db), user: User 
     order.status = "confirmed"
     order.confirmed_at = datetime.now(UTC)
     audit(db, user.email, "task_order.confirm", "task_order", order.id, after={"fee_cents": order.fee_cents})
+    notify_admins(
+        db, "task_orders", f"Task confirmed: {order.number}", f"{order.title} was confirmed and can start.", "/task-orders"
+    )
     db.commit()
     return task_order_out(order)
 
@@ -250,6 +274,7 @@ def decline_task_order(
     order.status = "declined"
     order.closed_reason = body.note.strip() if body.note else None
     audit(db, user.email, "task_order.decline", "task_order", order.id)
+    notify_admins(db, "task_orders", f"Task declined: {order.number}", order.title, "/task-orders")
     db.commit()
     return task_order_out(order)
 
@@ -264,5 +289,12 @@ def submit_task_order(order_id: int, body: TaskOrderNote, db: Session = Depends(
     order.submission_note = body.note.strip()
     order.review_due_on = review_due_date()
     audit(db, user.email, "task_order.submit", "task_order", order.id, after={"review_due_on": str(order.review_due_on)})
+    notify_admins(
+        db,
+        "reviews",
+        f"Task submitted for review: {order.number}",
+        f"{order.title}. Accept it or say what remains by {order.review_due_on:%d %b %Y}.",
+        "/task-orders",
+    )
     db.commit()
     return task_order_out(order)

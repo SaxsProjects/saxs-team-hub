@@ -133,7 +133,9 @@ def request_payment(payout_id: int, db: Session = Depends(get_db), user: User = 
         "Pay it by EFT from the business account, then mark it as paid in the Team Hub with the EFT reference.",
         kind="payouts",
         db=db,
+        link="/payouts",
     )
+    db.commit()
     return payout
 
 

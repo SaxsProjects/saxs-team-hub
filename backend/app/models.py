@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql import true
 
 from .db import Base, UTCDateTime, utcnow
 
@@ -32,6 +33,10 @@ DOCUMENT_KINDS = (
     "receipt",
     "credit_note",
     "company_template",
+    "proposal",
+    "statement",
+    "certificate",
+    "report",
 )
 # The company template library (Settings > Templates).
 TEMPLATE_CATEGORIES = ("letterhead", "offer", "contract", "policy", "finance", "other")
@@ -44,6 +49,24 @@ PAYOUT_KINDS = ("revenue_share", "task_fee")
 # Task-fee agreements: "standard" pays 7 days after acceptance; "deferred" (SP/ICA/2026/004 and 005) holds
 # fees for tasks accepted before the First Client Payment until 30 days after that payment.
 FEE_TERMS = ("standard", "deferred")
+
+# Clients (v2.0): not every client is a registered company, so the registration number is optional.
+CLIENT_KINDS = ("company", "sole_proprietor", "individual", "npo", "government", "other")
+PROPOSAL_STATUSES = ("draft", "issued", "accepted", "declined", "expired")
+CERTIFICATE_KINDS = (
+    "completion",
+    "achievement",
+    "appreciation",
+    "participation",
+    "recognition",
+    "training",
+    "service",
+    "project",
+    "partnership",
+    "custom",
+)
+# Follow-ups emailed to the client: 1 = due reminder, 2 = overdue notice, 3 = second notice, 4 = final notice.
+REMINDER_STAGES = (0, 1, 2, 3, 4)
 
 # Contractor agreement: 15% initial rate, 20% after a written review.
 INITIAL_RATE_BP = 1500
@@ -428,8 +451,18 @@ class Client(Base):
     email: Mapped[str | None] = mapped_column(String(320))
     phone: Mapped[str | None] = mapped_column(String(40))
     address: Mapped[str | None] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(24), default="company", server_default="company")
+    vat_number: Mapped[str | None] = mapped_column(String(32))
+    # Payment reminders and statements are emailed to the client automatically unless switched off.
+    reminders_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('company', 'sole_proprietor', 'individual', 'npo', 'government', 'other')", name="ck_client_kind"
+        ),
+    )
 
 
 class DocumentSequence(Base):
@@ -498,6 +531,9 @@ class Invoice(Base):
     pdf_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
     pdf_sha256: Mapped[str | None] = mapped_column(String(64))
     issued_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # Follow-ups emailed to the client (see REMINDER_STAGES); the daily job moves this on one stage at a time.
+    reminder_stage: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_reminded_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
@@ -652,3 +688,95 @@ class CompanyTemplateVersion(Base):
     document: Mapped[Document] = relationship()
 
     __table_args__ = (UniqueConstraint("template_id", "version", name="uq_company_template_version"),)
+
+
+# ---- v2.0: notifications, proposals, certificates --------------------------------------------------
+
+
+class Notification(Base):
+    """An in-app notification for one user. Unread until `read_at` is set; the bell shows the unread count."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+
+class Proposal(Base):
+    """A client proposal: the need, the solution, scope, timeline and price. Becomes a quotation when accepted.
+
+    Price lines are kept as JSON (description, quantity, unit_price_cents); totals follow the VAT setting."""
+
+    __tablename__ = "proposals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str | None] = mapped_column(String(32), unique=True)  # assigned only when issued
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id", ondelete="RESTRICT"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
+    service: Mapped[str] = mapped_column(String(32), default="custom")
+    introduction: Mapped[str | None] = mapped_column(Text)
+    need: Mapped[str | None] = mapped_column(Text)
+    solution: Mapped[str | None] = mapped_column(Text)
+    scope: Mapped[str | None] = mapped_column(Text)
+    timeline: Mapped[str | None] = mapped_column(Text)
+    why_us: Mapped[str | None] = mapped_column(Text)
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, default=0)
+    subtotal_cents: Mapped[int] = mapped_column(Integer, default=0)
+    vat_cents: Mapped[int] = mapped_column(Integer, default=0)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0)
+    issue_date: Mapped[date | None] = mapped_column(Date)
+    valid_until: Mapped[date | None] = mapped_column(Date)
+    quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id", ondelete="SET NULL"))
+    pdf_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    client: Mapped[Client] = relationship()
+
+    __table_args__ = (
+        CheckConstraint("status IN ('draft', 'issued', 'accepted', 'declined', 'expired')", name="ck_proposal_status"),
+        CheckConstraint("total_cents >= 0 AND subtotal_cents >= 0 AND vat_cents >= 0", name="ck_proposal_amounts"),
+    )
+
+
+class Certificate(Base):
+    """A certificate issued by the company (completion, appreciation, ...), numbered SP-CERT-0001 and verifiable online.
+
+    Anyone with the certificate's verification code can confirm it is genuine; certificates are revoked, never deleted."""
+
+    __tablename__ = "certificates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str] = mapped_column(String(32), unique=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str] = mapped_column(String(80))
+    subtitle: Mapped[str | None] = mapped_column(String(80))
+    lead: Mapped[str] = mapped_column(String(200))
+    recipient_name: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    issue_date: Mapped[date] = mapped_column(Date)
+    place: Mapped[str] = mapped_column(String(120))
+    verify_code: Mapped[str] = mapped_column(String(32), unique=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoke_reason: Mapped[str | None] = mapped_column(String(300))
+    pdf_document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    pdf_sha256: Mapped[str] = mapped_column(String(64))
+    issued_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('completion', 'achievement', 'appreciation', 'participation', 'recognition', 'training', 'service',"
+            " 'project', 'partnership', 'custom')",
+            name="ck_certificate_kind",
+        ),
+    )

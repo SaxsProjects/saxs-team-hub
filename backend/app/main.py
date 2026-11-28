@@ -20,6 +20,7 @@ from .routers import (
     devices,
     finance,
     me,
+    notifications,
     offers,
     overview,
     pages,
@@ -69,7 +70,21 @@ def create_app() -> FastAPI:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         return response
 
-    for module in (auth, devices, people, offers, projects, task_orders, finance, company, me, overview, avatars, templates):
+    for module in (
+        auth,
+        devices,
+        people,
+        offers,
+        projects,
+        task_orders,
+        finance,
+        company,
+        me,
+        overview,
+        avatars,
+        templates,
+        notifications,
+    ):
         app.include_router(module.router)
     app.include_router(offers.public)
     app.include_router(pages.router)

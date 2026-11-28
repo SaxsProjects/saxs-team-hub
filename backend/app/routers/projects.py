@@ -11,8 +11,9 @@ from ..company import company_settings
 from ..db import get_db
 from ..deps import current_user, require_admin
 from ..models import PROJECT_STATUSES, ClientPayment, Payout, Project, ProjectContributor, ProjectCost, User
+from ..notifications import notify_person
 from ..numbering import allocate_number
-from ..payouts import Instalment, calculate_payout_by_instalment
+from ..payouts import Instalment, calculate_payout_by_instalment, format_zar
 from ..pdf import payout_statement_pdf, task_fee_statement_pdf
 from ..schemas import (
     ContributorIn,
@@ -274,6 +275,16 @@ def record_payment(project_id: int, body: PaymentIn, db: Session = Depends(get_d
     if not project.contributors:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Add contributors (with agreed work shares) first")
     payment, payouts = record_client_payment(db, project, actor=admin.email, **body.model_dump())
+    for payout in payouts:
+        notify_person(
+            db,
+            payout.person,
+            "payouts",
+            f"New payout: {payout.statement_number}",
+            f"{format_zar(payout.amount_cents)} from {project.name}"
+            + (f", due {payout.due_at:%d %b %Y}." if payout.due_at else "."),
+            "/my/payouts",
+        )
     db.commit()
     return PaymentRecordedOut(payment=payment, payouts=payouts)
 
@@ -299,6 +310,14 @@ def mark_paid(payout_id: int, body: MarkPaidIn, db: Session = Depends(get_db), a
     payout.paid_at = datetime.now(UTC)
     payout.eft_reference = body.eft_reference.strip()
     audit(db, admin.email, "payout.paid", "payout", payout.id, after={"eft_reference": payout.eft_reference})
+    notify_person(
+        db,
+        payout.person,
+        "payouts",
+        f"Paid: {payout.statement_number}",
+        f"{format_zar(payout.amount_cents)} was paid by EFT (reference {payout.eft_reference}).",
+        "/my/payouts",
+    )
     db.commit()
     return payout
 
