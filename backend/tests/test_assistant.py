@@ -42,3 +42,20 @@ def test_member_briefing_is_their_own(client, admin, team):
     ids = {i["id"] for i in body["items"]}
     assert "photo" in ids and "overdue" not in ids and body["autopilot"] == {}
     assert client.get("/api/assistant").status_code == 401
+
+
+def test_admin_without_two_factor_cannot_read_the_briefing_or_bell(client, monkeypatch):
+    from app.config import get_settings
+    from app.models import User
+    from app.security import hash_password
+
+    monkeypatch.setattr(get_settings(), "require_admin_2fa", True)
+    with SessionLocal() as db:
+        db.add(User(email="second-admin@example.com", password_hash=hash_password("another-long-password"), role="admin"))
+        db.commit()
+    r = client.post("/api/auth/login", json={"email": "second-admin@example.com", "password": "another-long-password"})
+    token = r.json().get("access_token")
+    assert token, r.text
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/assistant", headers=headers).status_code == 403
+    assert client.get("/api/notifications", headers=headers).status_code == 403

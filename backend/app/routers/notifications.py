@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import current_user
+from ..deps import require_signed_in
 from ..models import Notification, User
 from ..notifications import mark_read, unread_count
 from ..schemas import ORM
@@ -41,7 +41,7 @@ def list_notifications(
     limit: int = Query(30, ge=1, le=100),
     before_id: int | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(current_user),
+    user: User = Depends(require_signed_in),
 ):
     stmt = select(Notification).where(Notification.user_id == user.id)
     if unread_only:
@@ -53,12 +53,12 @@ def list_notifications(
 
 
 @router.get("/unread-count")
-def get_unread_count(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def get_unread_count(db: Session = Depends(get_db), user: User = Depends(require_signed_in)):
     return {"unread": unread_count(db, user.id)}
 
 
 @router.post("/read")
-def read_some(body: ReadIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+def read_some(body: ReadIn, db: Session = Depends(get_db), user: User = Depends(require_signed_in)):
     owned = db.scalars(select(Notification.id).where(Notification.user_id == user.id, Notification.id.in_(body.ids))).all()
     if len(set(owned)) != len(set(body.ids)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Notification not found")
@@ -68,7 +68,7 @@ def read_some(body: ReadIn, db: Session = Depends(get_db), user: User = Depends(
 
 
 @router.post("/read-all")
-def read_all(db: Session = Depends(get_db), user: User = Depends(current_user)):
+def read_all(db: Session = Depends(get_db), user: User = Depends(require_signed_in)):
     mark_read(db, user.id)
     db.commit()
     return {"unread": 0}

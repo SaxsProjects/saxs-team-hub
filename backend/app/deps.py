@@ -50,6 +50,14 @@ def require_admin_any(user: User = Depends(current_user)) -> User:
     return user
 
 
+def require_signed_in(user: User = Depends(current_user)) -> User:
+    """Anyone on the team, with the same rules as the role-specific checks: an admin needs two-factor on
+    (as for require_admin) and a member needs a linked person. For screens both roles use (bell, assistant)."""
+    if user.role == "admin":
+        return require_admin(user)
+    return require_member(user)
+
+
 def require_member(user: User = Depends(current_user)) -> User:
     if user.role != "member" or not user.person_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Team members only")
