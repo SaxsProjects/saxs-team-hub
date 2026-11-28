@@ -4,6 +4,15 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [2.2.1] - 2026-11-28
+
+### Security / privacy
+- The integration API no longer returns any personal information. Connected systems such as SAXI-OS may pass
+  what they read to outside AI services, so they now get IDs, statuses, dates and amounts only: no client or
+  visitor names, email addresses, phone numbers, addresses, contact people, enquiry messages, document titles,
+  notes or line descriptions. Clients appear as "Client 12"; the founder sees the full record in the hub.
+  A test checks that none of these leak.
+
 ## [2.2.0] - 2026-11-28
 
 ### Added

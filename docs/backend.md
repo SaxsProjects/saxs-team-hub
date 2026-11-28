@@ -178,4 +178,4 @@ One request per screen, aggregated in the database:
 
 ## v2.2 additions
 
-- **Integration API keys** (`app/routers/integrations.py`): founder endpoints `GET/POST /api/api-keys`, `POST /api/api-keys/{id}/revoke` (two-factor required); system endpoints under `/api/integrations/v1` with `X-Api-Key: sphub_...`. Keys are SHA-256 hashed, scope-checked per route, rate-limited (120/min per IP), and never allow issuing, payments or payouts. SAXI-OS uses this instead of keeping its own invoices.
+- **Integration API keys** (`app/routers/integrations.py`): founder endpoints `GET/POST /api/api-keys`, `POST /api/api-keys/{id}/revoke` (two-factor required); system endpoints under `/api/integrations/v1` with `X-Api-Key: sphub_...`. Keys are SHA-256 hashed, scope-checked per route, rate-limited (120/min per IP), and never allow issuing, payments or payouts. SAXI-OS uses this instead of keeping its own invoices. Responses carry no personal information (IDs, statuses, dates, amounts only; clients as "Client N").
