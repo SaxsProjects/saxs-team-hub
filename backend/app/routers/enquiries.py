@@ -78,11 +78,19 @@ async def website_enquiry(request: Request, db: Session = Depends(get_db)):
     origin = (request.headers.get("origin") or "").rstrip("/")
     if origin and origin not in get_settings().website_origin_list:
         return JSONResponse({"detail": "Not allowed"}, status_code=403)
-    raw = await request.body()
-    if len(raw) > MAX_BODY:
-        return _cors(request, JSONResponse({"detail": "Message too long"}, status_code=413))
+    too_long = _cors(request, JSONResponse({"detail": "Message too long"}, status_code=413))
     try:
-        data = EnquiryIn.model_validate(json.loads(raw or b"{}"))
+        if int(request.headers.get("content-length") or 0) > MAX_BODY:
+            return too_long
+    except ValueError:
+        return too_long
+    raw = bytearray()
+    async for chunk in request.stream():  # count while reading: never hold more than MAX_BODY in memory
+        raw += chunk
+        if len(raw) > MAX_BODY:
+            return too_long
+    try:
+        data = EnquiryIn.model_validate(json.loads(bytes(raw) or b"{}"))
     except (ValueError, ValidationError):
         return _cors(
             request, JSONResponse({"detail": "Please give your name, a way to reach you and a message."}, status_code=422)
@@ -101,7 +109,14 @@ async def website_enquiry(request: Request, db: Session = Depends(get_db)):
         lines.append(f"Organisation: {e.organisation}")
     if e.service:
         lines.append(f"Service: {e.service}")
-    notify_admin(f"New website enquiry: {e.name}", "\n".join([*lines, "", e.message]), kind="enquiries", db=db, link="/enquiries")
+    notify_admin(
+        f"New website enquiry: {e.name}",
+        "\n".join([*lines, "", e.message]),
+        kind="enquiries",
+        db=db,
+        link="/enquiries",
+        discord="New website enquiry",  # no visitor text (name, message) goes to Discord
+    )
     db.commit()
     return _cors(request, JSONResponse({"ok": True}, status_code=201))
 

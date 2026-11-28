@@ -88,6 +88,30 @@ def test_discord_alert_only_for_a_discord_webhook(monkeypatch):
     emailer.post_to_discord("Hello")
     assert sent == []
     monkeypatch.setattr(settings, "discord_webhook_url", "https://discord.com/api/webhooks/1/abc")
-    emailer.post_to_discord("New website enquiry: Thandi", "/enquiries")
-    assert sent[0]["content"].startswith("New website enquiry: Thandi\n") and sent[0]["content"].endswith("/enquiries")
-    assert sent[0]["allowed_mentions"] == {"parse": []}
+    emailer.post_to_discord("Paid **[x](https://e.example)** @everyone", "/enquiries")
+    first, second = sent[0]["content"].split("\n")
+    bs = chr(92)
+    expected = "Paid " + "".join(bs + c if c in "*[]():@" else c for c in "**[x](https://e.example)** @everyone")
+    assert first == expected
+    assert second.endswith("/enquiries")
+    assert sent[0]["allowed_mentions"] == {"parse": []} and sent[0]["flags"] == 4  # no link previews
+
+
+def test_enquiry_discord_alert_has_no_visitor_text_and_follows_the_switch(client, admin, monkeypatch):
+    titles = []
+    monkeypatch.setattr("app.emailer.post_to_discord", lambda title, link=None: titles.append(title))
+    post(client, GOOD)
+    assert titles == ["New website enquiry"]
+    prefs = client.get("/api/auth/notifications", headers=admin).json()
+    client.put("/api/auth/notifications", headers=admin, json={**prefs, "enquiries": False})
+    post(client, {**GOOD, "name": "Second Person"})
+    assert titles == ["New website enquiry"]
+
+
+def test_oversized_body_is_refused_before_reading(client):
+    r = client.post(
+        "/api/public/enquiries",
+        content=b"{}",
+        headers={"Content-Type": "text/plain", "Origin": SITE, "Content-Length": "99999999"},
+    )
+    assert r.status_code == 413
