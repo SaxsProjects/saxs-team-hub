@@ -29,7 +29,7 @@ def test_receipt_preview_saves_nothing(client, admin, company_ready):  # noqa: F
     assert client.get(f"/api/invoices/{inv['id']}/receipts", headers=admin).json() == []
     assert audit_count(client, admin) == before
     paid = client.post(f"/api/invoices/{inv['id']}/payments", headers=admin, json=body)
-    assert paid.status_code == 201 and paid.json()["receipt"]["number"] == f"SP-R-{YEAR}-001"
+    assert paid.status_code == 201 and paid.json()["receipt"]["number"] == "SP-R-0001"
 
 
 def test_receipt_preview_applies_the_same_checks(client, admin, company_ready):  # noqa: F811
@@ -76,7 +76,7 @@ def test_credit_note_preview_saves_nothing(client, admin, company_ready):  # noq
     note = client.post(
         f"/api/invoices/{inv['id']}/credit-notes", headers=admin, json={"amount_cents": 25_000, "reason": "Discount agreed"}
     )
-    assert note.status_code == 201 and note.json()["credit_note"]["number"] == f"SP-CN-{YEAR}-001"
+    assert note.status_code == 201 and note.json()["credit_note"]["number"] == "SP-CN-0001"
 
 
 def test_previews_are_founder_only(client, admin, team, company_ready):  # noqa: F811

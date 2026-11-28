@@ -74,7 +74,7 @@ def create_task_order(body: TaskOrderIn, db: Session = Depends(get_db), admin: U
     if body.due_on < today_local():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "The due date cannot be in the past")
     order = TaskOrder(
-        number=allocate_number(db, "TO", today_local().year),
+        number=allocate_number(db, "TO"),
         person_id=person.id,
         title=body.title.strip(),
         deliverable=body.deliverable.strip(),

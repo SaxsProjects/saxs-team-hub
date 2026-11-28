@@ -196,12 +196,10 @@ def add_cost(project_id: int, body: CostIn, db: Session = Depends(get_db), admin
 
 
 def next_statement_number(db: Session) -> str:
-    year = today_local().year
-
     def existing() -> int:  # statements numbered before the sequence table existed
-        return db.scalar(select(func.count(Payout.id)).where(Payout.statement_number.like(f"SP-PS-{year}-%"))) or 0
+        return db.scalar(select(func.count(Payout.id)).where(Payout.statement_number.like("SP-PS-%"))) or 0
 
-    return allocate_number(db, "PS", year, seed=existing)
+    return allocate_number(db, "PS", seed=existing)
 
 
 def record_client_payment(

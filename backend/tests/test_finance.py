@@ -171,7 +171,7 @@ def test_quotation_lifecycle_numbering_and_signature(client, admin, company_read
     r = client.post(f"/api/quotations/{q['id']}/issue", headers=admin)
     assert r.status_code == 200, r.text
     issued = r.json()
-    assert issued["number"] == f"SP-Q-{YEAR}-001" and issued["status"] == "issued"
+    assert issued["number"] == "SP-Q-0001" and issued["status"] == "issued"
     assert issued["issue_date"] == TODAY and issued["valid_until"]
 
     stored = client.get(f"/api/quotations/{q['id']}/pdf", headers=admin).content
@@ -185,13 +185,13 @@ def test_quotation_lifecycle_numbering_and_signature(client, admin, company_read
     assert client.delete(f"/api/quotations/{q['id']}", headers=admin).status_code == 409
 
     q2 = new_quote(client, admin, c["id"], title="Second")
-    assert client.post(f"/api/quotations/{q2['id']}/issue", headers=admin).json()["number"] == f"SP-Q-{YEAR}-002"
+    assert client.post(f"/api/quotations/{q2['id']}/issue", headers=admin).json()["number"] == "SP-Q-0002"
 
     # A draft that is deleted never used a number.
     q3 = new_quote(client, admin, c["id"], title="Scrapped")
     assert client.delete(f"/api/quotations/{q3['id']}", headers=admin).status_code == 204
     q4 = new_quote(client, admin, c["id"], title="Third")
-    assert client.post(f"/api/quotations/{q4['id']}/issue", headers=admin).json()["number"] == f"SP-Q-{YEAR}-003"
+    assert client.post(f"/api/quotations/{q4['id']}/issue", headers=admin).json()["number"] == "SP-Q-0003"
 
 
 def test_quotation_without_lines_cannot_be_issued(client, admin, company_ready):
@@ -241,7 +241,7 @@ def test_deposit_and_balance_invoices_drive_payouts(client, admin, company_ready
     draft_pdf = client.get(f"/api/invoices/{deposit['id']}/pdf", headers=admin).content
     assert b"/ca 0.15" in draft_pdf  # DRAFT - NOT VALID FOR PAYMENT
     deposit = client.post(f"/api/invoices/{deposit['id']}/issue", headers=admin).json()
-    assert deposit["number"] == f"SP-INV-{YEAR}-001" and deposit["status"] == "issued"
+    assert deposit["number"] == "SP-INV-0001" and deposit["status"] == "issued"
     inv_pdf = client.get(f"/api/invoices/{deposit['id']}/pdf", headers=admin).content
     assert hashlib.sha256(inv_pdf).hexdigest() == deposit["pdf_sha256"]
     assert not has_image(inv_pdf)  # invoices carry banking details, not a signature
@@ -260,7 +260,7 @@ def test_deposit_and_balance_invoices_drive_payouts(client, admin, company_ready
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["invoice"]["status"] == "paid" and body["invoice"]["balance_cents"] == 0
-    assert body["receipt"]["number"] == f"SP-R-{YEAR}-001"
+    assert body["receipt"]["number"] == "SP-R-0001"
     [first] = body["payouts"]
     assert first["amount_cents"] == 120_000  # (10,000 - 2,000) x 15% = R1,200
     receipt_pdf = client.get(f"/api/receipts/{body['receipt']['id']}/pdf", headers=admin).content
@@ -340,7 +340,7 @@ def test_credit_notes_correct_issued_invoices(client, admin, company_ready):
     )
     assert r.status_code == 201, r.text
     note = r.json()["credit_note"]
-    assert note["number"] == f"SP-CN-{YEAR}-001" and r.json()["invoice"]["balance_cents"] == 60_000
+    assert note["number"] == "SP-CN-0001" and r.json()["invoice"]["balance_cents"] == 60_000
     note_pdf = client.get(f"/api/credit-notes/{note['id']}/pdf", headers=admin).content
     assert has_image(note_pdf)
 
@@ -418,20 +418,36 @@ def test_vat_registered_company_issues_tax_invoices(client, admin, company_ready
 # ---- Numbering -----------------------------------------------------------------------------------
 
 
-def test_numbering_is_per_type_and_year_and_respects_seed():
+def test_numbering_is_per_type_continuous_and_respects_seed():
     from app.db import SessionLocal
     from app.numbering import allocate_number
 
     with SessionLocal() as db:
-        assert allocate_number(db, "Q", 2026) == "SP-Q-2026-001"
-        assert allocate_number(db, "Q", 2026) == "SP-Q-2026-002"
-        assert allocate_number(db, "INV", 2026) == "SP-INV-2026-001"
-        assert allocate_number(db, "Q", 2027) == "SP-Q-2027-001"
-        assert allocate_number(db, "PS", 2026, seed=lambda: 4) == "SP-PS-2026-005"
+        assert allocate_number(db, "Q") == "SP-Q-0001"
+        assert allocate_number(db, "Q") == "SP-Q-0002"
+        assert allocate_number(db, "INV") == "SP-INV-0001"
+        assert allocate_number(db, "PS", seed=lambda: 4) == "SP-PS-0005"
         db.rollback()  # nothing committed, so the numbers are not used up
-        assert allocate_number(db, "Q", 2026) == "SP-Q-2026-001"
+        assert allocate_number(db, "Q") == "SP-Q-0001"
         with pytest.raises(ValueError):
-            allocate_number(db, "XX", 2026)
+            allocate_number(db, "XX")
+
+
+def test_continuous_numbers_start_after_the_old_yearly_numbers_and_never_reset():
+    from app.db import SessionLocal
+    from app.models import DocumentSequence
+    from app.numbering import allocate_number
+
+    with SessionLocal() as db:
+        # Before v2.0: 3 invoices in 2026 and 2 in 2027 under the yearly scheme.
+        db.add_all([DocumentSequence(doc_type="INV", year=2026, last_number=3), DocumentSequence(doc_type="INV", year=2027, last_number=2)])
+        db.flush()
+        assert allocate_number(db, "INV") == "SP-INV-0006"
+        row = db.get(DocumentSequence, ("INV", 0))
+        row.last_number = 9999
+        db.flush()
+        assert allocate_number(db, "INV") == "SP-INV-10000"  # grows past four digits, for ever
+        db.rollback()
 
 
 # ---- Signature loading ---------------------------------------------------------------------------

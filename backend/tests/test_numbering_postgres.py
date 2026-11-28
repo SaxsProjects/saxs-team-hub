@@ -29,7 +29,7 @@ def pg_sessions():
 def test_fifty_parallel_issues_get_fifty_numbers_without_gaps(pg_sessions):
     def issue(i: int) -> str | None:
         with pg_sessions() as db:
-            number = allocate_number(db, "INV", 2031)
+            number = allocate_number(db, "INV")
             if i % 10 == 9:  # some requests fail after taking a number: it must be given back
                 db.rollback()
                 return None
@@ -40,4 +40,4 @@ def test_fifty_parallel_issues_get_fifty_numbers_without_gaps(pg_sessions):
         numbers = [n for n in pool.map(issue, range(55)) if n]
 
     assert len(numbers) == 50
-    assert sorted(numbers) == [f"SP-INV-2031-{n:03d}" for n in range(1, 51)]
+    assert sorted(numbers) == [f"SP-INV-{n:04d}" for n in range(1, 51)]

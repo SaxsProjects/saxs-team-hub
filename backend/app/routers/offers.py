@@ -15,6 +15,7 @@ from ..db import get_db
 from ..deps import client_ip, public_offer_limiter, require_admin
 from ..emailer import OutgoingEmail, notify_admin, send_email
 from ..models import Offer, OfferResponse, Person, User
+from ..numbering import allocate_number
 from ..pdf import acceptance_record_pdf
 from ..schemas import (
     AcceptIn,
@@ -85,9 +86,16 @@ def offer_version_hash(offer: Offer) -> str:
 
 
 def next_reference(db: Session) -> str:
-    year = today_local().year
-    count = db.scalar(select(func.count(Offer.id)).where(Offer.reference.like(f"SP-OFF-{year}-%"))) or 0
-    return f"SP-OFF-{year}-{count + 1:03d}"
+    """Next offer number in the continuous SP-OFF series, skipping any the founder typed in by hand."""
+
+    def existing() -> int:  # offers numbered before the sequence table existed
+        return db.scalar(select(func.count(Offer.id)).where(Offer.reference.like("SP-OFF-%"))) or 0
+
+    for _ in range(20):
+        reference = allocate_number(db, "OFF", seed=existing)
+        if not db.scalar(select(Offer.id).where(Offer.reference == reference)):
+            return reference
+    raise HTTPException(status.HTTP_409_CONFLICT, "Could not find a free offer number; type one in")
 
 
 # ---- Admin ------------------------------------------------------------------------------

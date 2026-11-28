@@ -295,7 +295,7 @@ def issue_quotation(quotation_id: int, db: Session = Depends(get_db), admin: Use
     today = today_local()
     q.issue_date = today
     q.valid_until = today + timedelta(days=get_settings().quote_valid_days)
-    q.number = allocate_number(db, "Q", today.year)
+    q.number = allocate_number(db, "Q")
     q.status = "issued"
     q.issued_at = datetime.now(UTC)
     stored = _store_pdf(db, "quotation", q.number, quotation_pdf(q, draft=False, company=company_settings(db)))
@@ -494,7 +494,7 @@ def issue_invoice(invoice_id: int, db: Session = Depends(get_db), admin: User = 
     today = today_local()
     inv.issue_date = today
     inv.due_date = today + timedelta(days=get_settings().invoice_due_days)
-    inv.number = allocate_number(db, "INV", today.year)
+    inv.number = allocate_number(db, "INV")
     inv.status = "issued"
     inv.issued_at = datetime.now(UTC)
     stored = _store_pdf(db, "invoice", inv.number, invoice_pdf(inv, draft=False, company=company_settings(db)))
@@ -619,7 +619,7 @@ def record_invoice_payment(
     _refresh_invoice_status(inv)
     today = today_local()
     receipt = Receipt(
-        number=allocate_number(db, "R", today.year),
+        number=allocate_number(db, "R"),
         invoice_id=inv.id,
         client_payment_id=client_payment_id,
         amount_cents=body.amount_cents,
@@ -656,7 +656,7 @@ def issue_credit_note(invoice_id: int, body: CreditNoteIn, db: Session = Depends
     _refresh_invoice_status(inv)
     today = today_local()
     note = CreditNote(
-        number=allocate_number(db, "CN", today.year),
+        number=allocate_number(db, "CN"),
         invoice_id=inv.id,
         reason=body.reason.strip(),
         amount_cents=body.amount_cents,
