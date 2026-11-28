@@ -20,6 +20,7 @@ from .routers import (
     certificates,
     company,
     devices,
+    enquiries,
     finance,
     me,
     notifications,
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
         proposals,
         certificates,
         assistant,
+        enquiries,
     ):
         app.include_router(module.router)
     app.include_router(offers.public)

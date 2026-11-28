@@ -140,8 +140,42 @@ def notify_enabled(db, kind: str) -> bool:
     return not (prefs and prefs.get(kind) is False)
 
 
-def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None, link: str | None = None) -> None:
-    """Email the founder and put the same message in the notification bell.
+DISCORD_MARKDOWN = set(chr(92) + "*_~`|>[]()#-:<@")
+
+
+def post_to_discord(title: str, link: str | None = None) -> None:
+    """Post a one-line alert to the founder's Discord channel, if a webhook is set. Runs in the background and
+    never raises. Only the title and a link go to Discord: details stay in the Team Hub. Markdown in the title
+    is escaped and link previews and mentions are switched off, so text from outside can't format or ping."""
+    url = get_settings().discord_webhook_url.strip()
+    if not url.startswith("https://discord.com/api/webhooks/"):
+        return
+    import json
+    import threading
+    import urllib.request
+
+    from .services import link as hub_link
+
+    safe = "".join(chr(92) + ch if ch in DISCORD_MARKDOWN else ch for ch in title[:300].replace(chr(10), " "))
+    content = safe + (chr(10) + hub_link(link) if link else "")
+
+    def send() -> None:
+        try:
+            body = json.dumps({"content": content, "allowed_mentions": {"parse": []}, "flags": 4}).encode()
+            headers = {"Content-Type": "application/json", "User-Agent": "SaxsTeamHub"}
+            req = urllib.request.Request(url, data=body, headers=headers)  # noqa: S310 - url checked to be a discord.com https webhook above
+            urllib.request.urlopen(req, timeout=8).close()  # noqa: S310
+        except Exception:
+            log.warning("Discord alert failed: %s", title)
+
+    threading.Thread(target=send, daemon=True).start()
+
+
+def notify_admin(
+    subject: str, text: str, *, kind: str | None = None, db=None, link: str | None = None, discord: str | None = None
+) -> None:
+    """Email the founder, put the same message in the notification bell, and post `discord` (or the subject) to
+    Discord if a webhook is set. Pass a `discord` title without outside text (names, messages) where there is any.
 
     With `db`, the bell entry is saved with the caller's transaction (the caller commits); without it (in
     background tasks) it is saved on its own. The email switches in Settings only affect the email."""
@@ -158,6 +192,7 @@ def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None, l
     if kind and db is not None and not notify_enabled(db, kind):
         log.info("Admin notification switched off (%s): %s", kind, subject)
         return
+    post_to_discord(discord or subject, link)
     if settings.admin_notify_email:
         send_email(OutgoingEmail(to=settings.admin_notify_email, subject=subject, text=text))
     else:

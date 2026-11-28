@@ -780,3 +780,24 @@ class Certificate(Base):
             name="ck_certificate_kind",
         ),
     )
+
+
+class Enquiry(Base):
+    """A message sent from the company website's contact form. The founder follows it up and can turn it into a client."""
+
+    __tablename__ = "enquiries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    organisation: Mapped[str | None] = mapped_column(String(200))
+    service: Mapped[str | None] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(40), default="website", server_default="website")
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new", index=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (CheckConstraint("status IN ('new', 'contacted', 'converted', 'closed')", name="ck_enquiry_status"),)

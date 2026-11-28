@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .client_finance import autopilot_enabled
-from .models import Invoice, Offer, OnboardingItem, Payout, Proposal, Quotation, TaskOrder, User
+from .models import Enquiry, Invoice, Offer, OnboardingItem, Payout, Proposal, Quotation, TaskOrder, User
 from .payouts import format_zar
 from .services import local_tz, today_local
 from .vat import vat_position
@@ -72,6 +72,19 @@ def _plural(n: int, word: str) -> str:
 def founder_suggestions(db: Session, today: date) -> list[Suggestion]:
     out: list[Suggestion] = []
     add = out.append
+
+    new_enquiries = db.scalar(select(func.count()).select_from(Enquiry).where(Enquiry.status == "new")) or 0
+    if new_enquiries:
+        add(
+            Suggestion(
+                "enquiries",
+                "high",
+                f"{new_enquiries} new website enquir{'y' if new_enquiries == 1 else 'ies'}",
+                "Reply within one business day, as the website promises.",
+                "/enquiries",
+                "Open",
+            )
+        )
 
     vat = vat_position(db, today)
     if vat.status in ("must_register", "approaching"):

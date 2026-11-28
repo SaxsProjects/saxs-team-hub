@@ -65,6 +65,7 @@ class NotificationPrefs(BaseModel):
     reviews: bool = True
     payouts: bool = True
     invoices: bool = True
+    enquiries: bool = True  # a new enquiry from the company website
     # Autopilot: emails the Team Hub sends to clients on the founder's behalf.
     client_reminders: bool = True  # payment reminders before and after an invoice's due date
     client_statements: bool = True  # a statement of account on the 1st of each month to clients who owe money

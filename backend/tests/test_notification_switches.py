@@ -37,6 +37,7 @@ def test_notifications_default_on_and_need_admin(client, admin):
         "reviews": True,
         "payouts": True,
         "invoices": True,
+        "enquiries": True,
         "client_reminders": True,
         "client_statements": True,
     }

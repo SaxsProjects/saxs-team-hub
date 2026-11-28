@@ -170,3 +170,8 @@ One request per screen, aggregated in the database:
 - **VAT tracker** (`app/vat.py`): issued invoices in the last 365 days, excluding VAT and less credit notes, against `VAT_COMPULSORY_THRESHOLD_CENTS` (R2.3m) and `VAT_VOLUNTARY_THRESHOLD_CENTS` (R120k).
 - **Proposals** (`app/proposals.py`, `/api/proposals`), **certificates** (`app/certificates.py`, `/api/certificates`, public `/verify/<code>`), **reports** (`/api/reports/finance`), **assistant** (`app/assistant.py`, `/api/assistant`).
 - **Migration safety**: `python -m scripts.check_migrations` (CI) refuses an `upgrade()` that drops tables or columns or deletes rows unless the line says `# data-safe: <why>`.
+
+## v2.1 additions
+
+- **Website enquiries** (`app/routers/enquiries.py`): `POST /api/public/enquiries` takes a text/plain JSON body (a CORS "simple" request, so no preflight and no cookies), answers only `WEBSITE_ORIGINS`, is rate-limited, and has a honeypot field `website`. Founder endpoints: `GET /api/enquiries`, `PATCH /api/enquiries/{id}`, `POST /api/enquiries/{id}/client`.
+- **Discord** (`emailer.post_to_discord`): only `https://discord.com/api/webhooks/...` URLs are used; title and link only, mentions disabled, sent on a background thread.

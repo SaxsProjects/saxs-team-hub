@@ -16,6 +16,7 @@ vi.mock("../../lib/pdfRender", () => ({
 import { AppShell } from "../../components/AppShell";
 import { PreviewProvider } from "../../components/DocumentPreview";
 import { Certificates } from "./Certificates";
+import { Enquiries } from "./Enquiries";
 import { Proposals } from "./Proposals";
 
 type Call = { url: string; method: string; body: unknown };
@@ -134,5 +135,21 @@ describe("Certificates", () => {
     expect(await screen.findByText("Rendered PDF page")).toBeInTheDocument();
     expect(calls.find((c) => c.url === "/api/certificates/preview")?.body).toMatchObject({ kind: "completion", recipient_name: "Jane Doe" });
     expect(calls.some((c) => c.method === "POST" && c.url === "/api/certificates")).toBe(false);
+  });
+});
+
+describe("Website enquiries", () => {
+  it("shows a new enquiry and turns it into a client", async () => {
+    const enquiry = { id: 4, name: "Thandi Mokoena", email: "thandi@example.com", phone: "082 123 4567", organisation: "Glow Salon", service: "Website", message: "We need a website.", source: "website", status: "new", client_id: null, created_at: "2026-11-28T08:00:00Z" };
+    const calls = renderPage(<Enquiries />, {
+      "/api/enquiries": [enquiry],
+      "POST /api/enquiries/4/client": { ...enquiry, status: "converted", client_id: 9 },
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByText("We need a website.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /WhatsApp/ })).toHaveAttribute("href", "https://wa.me/27821234567");
+    await user.click(screen.getByRole("button", { name: "Make client" }));
+    expect(await screen.findByText(/Client created/)).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST" && c.url === "/api/enquiries/4/client")).toBe(true);
   });
 });
