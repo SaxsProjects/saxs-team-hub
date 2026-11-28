@@ -5,6 +5,7 @@ Read-only and aggregated in the database, so each screen loads with one request.
 
 import csv
 import io
+from dataclasses import asdict
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends
@@ -17,6 +18,7 @@ from ..db import get_db
 from ..deps import require_admin, require_member
 from ..models import ClientPayment, Invoice, OnboardingItem, Payout, Person, Quotation, Receipt, TaskOrder, User
 from ..services import audit, local_tz, today_local
+from ..vat import vat_position
 from .me import REQUEST_AGAIN_AFTER
 from .people import current_rate
 
@@ -44,6 +46,18 @@ class InvoiceSummary(BaseModel):
     draft_count: int
 
 
+class VatOut(BaseModel):
+    registered: bool
+    vat_number: str | None
+    rate_bp: int
+    taxable_12m_cents: int
+    compulsory_threshold_cents: int
+    voluntary_threshold_cents: int
+    share_of_compulsory_bp: int
+    status: str
+    message: str
+
+
 class DashboardOut(BaseModel):
     today: date
     payouts: PayoutSummary
@@ -53,6 +67,7 @@ class DashboardOut(BaseModel):
     task_reviews_overdue: int
     people_by_status: dict[str, int]
     received_this_year_cents: int
+    vat: VatOut
 
 
 class MemberOverviewOut(BaseModel):
@@ -123,6 +138,7 @@ def dashboard(db: Session = Depends(get_db), _: User = Depends(require_admin)):
         people_by_status=_by_status(db, Person.status),
         received_this_year_cents=_sum(db, Receipt.amount_cents, Receipt.received_on >= year_start)
         + _sum(db, ClientPayment.amount_cents, ClientPayment.received_at >= year_start),
+        vat=VatOut(**asdict(vat_position(db, today))),
     )
 
 

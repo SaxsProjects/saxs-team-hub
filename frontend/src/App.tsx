@@ -50,6 +50,9 @@ const TeamOffers = lazy(() =>
   import("./pages/founder/TeamOffers").then((m) => ({ default: m.TeamOffers })),
 );
 const Templates = lazy(() => import("./pages/founder/Templates").then((m) => ({ default: m.Templates })));
+const Proposals = lazy(() => import("./pages/founder/Proposals").then((m) => ({ default: m.Proposals })));
+const Certificates = lazy(() => import("./pages/founder/Certificates").then((m) => ({ default: m.Certificates })));
+const Reports = lazy(() => import("./pages/founder/Reports").then((m) => ({ default: m.Reports })));
 
 export function App() {
   const { me, loading } = useAuth();
@@ -105,6 +108,9 @@ export function App() {
           <Route path="/payouts" element={<Payouts />} />
           <Route path="/audit" element={<AuditHistory />} />
           <Route path="/templates" element={<Templates />} />
+          <Route path="/proposals" element={<Proposals />} />
+          <Route path="/certificates" element={<Certificates />} />
+          <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<FounderSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

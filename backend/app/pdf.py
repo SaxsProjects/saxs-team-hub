@@ -186,6 +186,8 @@ class _Doc(FPDF):
         lines = [client.name]
         if client.registration_number:
             lines.append(f"Registration No: {client.registration_number}")
+        if getattr(client, "vat_number", None):
+            lines.append(f"VAT No: {client.vat_number}")
         if client.contact_name:
             lines.append(f"Attention: {client.contact_name}")
         if client.address:
@@ -424,9 +426,20 @@ class _Doc(FPDF):
 
 
 def _vat_totals(subtotal: int, vat: int, vat_rate_bp: int) -> list[tuple[str, str]]:
+    """Every quotation and invoice shows the amount excluding VAT, the VAT and the amount including VAT.
+
+    Until the company is a registered VAT vendor the VAT line is 0% and says so (company standard SP/CORP/2026/008)."""
     if vat_rate_bp:
-        return [("Subtotal (excl. VAT)", format_zar(subtotal)), (f"VAT at {format_bp(vat_rate_bp)}", format_zar(vat))]
-    return [("Subtotal", format_zar(subtotal))]
+        return [
+            ("Total excl. VAT", format_zar(subtotal)),
+            (f"VAT at {format_bp(vat_rate_bp)}", format_zar(vat)),
+            ("Total incl. VAT", format_zar(subtotal + vat)),
+        ]
+    return [
+        ("Amount excl. VAT", format_zar(subtotal)),
+        ("VAT 0% (not registered)", format_zar(0)),
+        ("Amount incl. VAT", format_zar(subtotal)),
+    ]
 
 
 def _queries(s: Settings, what: str) -> str:
@@ -458,7 +471,7 @@ def quotation_pdf(q, *, draft: bool, company: Settings | None = None) -> bytes:
     vat_text = (
         f"Prices include VAT at {format_bp(q.vat_rate_bp)}."
         if q.vat_rate_bp
-        else f"{s.company_legal_name} is not registered for VAT, so no VAT is charged."
+        else f"{s.company_legal_name} is not a registered VAT vendor, so no VAT is charged (VAT 0%)."
     )
     notes = [
         (
@@ -514,8 +527,6 @@ def invoice_pdf(inv, *, draft: bool, company: Settings | None = None) -> bytes:
     doc.box("Banking details", banking)
     doc.line_table(inv.lines)
     totals = _vat_totals(inv.subtotal_cents, inv.vat_cents, inv.vat_rate_bp)
-    if inv.vat_rate_bp:
-        totals.append(("Total", format_zar(inv.total_cents)))
     if inv.credited_cents:
         totals.append(("Less credited", format_zar(inv.credited_cents)))
     if inv.paid_cents:
@@ -525,7 +536,11 @@ def invoice_pdf(inv, *, draft: bool, company: Settings | None = None) -> bytes:
             "Payment terms",
             f"Payment is due within {s.invoice_due_days} days of the invoice date. Please use the invoice number as your "
             f"payment reference and email proof of payment to {s.company_email or 'us'}."
-            + ("" if inv.vat_rate_bp else f" {s.company_legal_name} is not registered for VAT."),
+            + (
+                ""
+                if inv.vat_rate_bp
+                else f" {s.company_legal_name} is not a registered VAT vendor, so no VAT is charged (VAT 0%)."
+            ),
         ),
         (
             "Ownership",

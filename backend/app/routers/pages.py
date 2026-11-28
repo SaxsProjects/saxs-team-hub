@@ -261,3 +261,35 @@ def forgot_password_submit(background: BackgroundTasks, email: str = Form(""), d
         "<p>If that address has a Team Hub account, we've sent a link to reset the password. "
         "It is valid for 1 hour.</p></div>",
     )
+
+
+# ---- Certificate verification ----------------------------------------------------------
+
+
+@router.get("/verify/{code}", response_class=HTMLResponse, dependencies=[Depends(public_offer_limiter)])
+def verify_certificate_page(code: str, db: Session = Depends(get_db)):
+    """Anyone can check a certificate; only what is printed on it is shown."""
+    from ..routers.certificates import find_by_code
+
+    cert = find_by_code(db, code)
+    if not cert:
+        return page(
+            "Certificate not found",
+            '<div class="card"><h1>Not found</h1><p>No certificate matches this link. Check that you typed it exactly '
+            "as printed, or contact us quoting the certificate number.</p></div>",
+            404,
+        )
+    if cert.revoked_at:
+        verdict = f'<div class="error">This certificate was revoked on {cert.revoked_at:%d %B %Y} and is no longer valid.</div>'
+    else:
+        verdict = "<p><strong>This certificate is genuine and valid.</strong></p>"
+    title = " ".join(v for v in (cert.title, cert.subtitle or "") if v).title()
+    body = (
+        f'<div class="card"><h1>{escape(title)}</h1>{verdict}'
+        f"<dl><dt>Certificate No</dt><dd>{escape(cert.number)}</dd>"
+        f"<dt>Awarded to</dt><dd>{escape(cert.recipient_name)}</dd>"
+        f"<dt>For</dt><dd>{escape(cert.body)}</dd>"
+        f"<dt>Date</dt><dd>{cert.issue_date:%d %B %Y}, {escape(cert.place)}</dd>"
+        f"<dt>Issued by</dt><dd>{escape(get_settings().company_legal_name)}</dd></dl></div>"
+    )
+    return page("Certificate check", body)

@@ -140,7 +140,20 @@ def notify_enabled(db, kind: str) -> bool:
     return not (prefs and prefs.get(kind) is False)
 
 
-def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None) -> None:
+def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None, link: str | None = None) -> None:
+    """Email the founder and put the same message in the notification bell.
+
+    With `db`, the bell entry is saved with the caller's transaction (the caller commits); without it (in
+    background tasks) it is saved on its own. The email switches in Settings only affect the email."""
+    from .notifications import notify_admins, notify_detached
+
+    try:
+        if db is not None:
+            notify_admins(db, kind or "system", subject, text, link)
+        else:
+            notify_detached(kind or "system", subject, text, link)
+    except Exception:  # the bell must never break the action that triggered it
+        log.exception("Could not save the in-app notification: %s", subject)
     settings = get_settings()
     if kind and db is not None and not notify_enabled(db, kind):
         log.info("Admin notification switched off (%s): %s", kind, subject)

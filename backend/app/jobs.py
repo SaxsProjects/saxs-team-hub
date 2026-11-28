@@ -9,10 +9,13 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .client_finance import send_client_reminders, send_monthly_report, send_monthly_statements
 from .config import get_settings
 from .emailer import notify_admin
 from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, TaskOrder, User
+from .notifications import purge_old
 from .payouts import format_zar
+from .routers.proposals import expire_proposals
 from .services import audit, today_local
 
 
@@ -44,6 +47,7 @@ def remind_due_payouts(db: Session) -> int:
             + "\n\nMark each as paid in the Team Hub with its EFT reference.",
             kind="payouts",
             db=db,
+            link="/payouts",
         )
     return len(due)
 
@@ -62,6 +66,7 @@ def remind_overdue_reviews(db: Session) -> int:
             "These submitted tasks are waiting for you to accept them or explain what remains:\n\n" + "\n".join(lines),
             kind="reviews",
             db=db,
+            link="/task-orders",
         )
     return len(late)
 
@@ -120,11 +125,18 @@ def remind_overdue_invoices(db: Session) -> int:
 
 
 def run_daily(db: Session) -> dict:
-    return {
+    result = {
         "offers_expired": expire_overdue_offers(db),
         "quotations_expired": expire_quotations(db),
         "invoices_overdue": remind_overdue_invoices(db),
         "payouts_due": remind_due_payouts(db),
         "task_reviews_overdue": remind_overdue_reviews(db),
         "people_purged": apply_retention(db),
+        "proposals_expired": expire_proposals(db),
+        "client_reminders_sent": send_client_reminders(db),
+        "statements_sent": send_monthly_statements(db),
+        "monthly_report_sent": send_monthly_report(db),
+        "notifications_purged": purge_old(db),
     }
+    db.commit()  # the bell entries created by the reminders above
+    return result

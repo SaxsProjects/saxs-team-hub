@@ -117,7 +117,7 @@ backend/
     services.py      audit(), today_local() (Africa/Johannesburg), document storage
     payouts.py       payout maths (instalment-by-instalment, single rounding)
     terms.py         agreement date rules: rate_at, First Client Payment, task-fee due dates
-    numbering.py     SP-* document numbers (row-locked counter per year)
+    numbering.py     SP-* document numbers (row-locked, continuous, never reset)
     pdf.py           statements, invoices, acceptance records; signature loading
     emailer.py       Resend (HTTPS) or SMTP + notify_admin; in tests mails go to emailer.outbox
     jobs.py          daily jobs

@@ -3,13 +3,22 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, apiBlob, post } from "../../api/client";
-import type { Client, CreditNote, FinanceReadiness, Invoice, LineInput, Project, Quotation, Receipt } from "../../api/types";
+import type { Client, ClientKind, CreditNote, FinanceReadiness, Invoice, LineInput, Project, Quotation, Receipt, StatementResult } from "../../api/types";
 import { usePreview } from "../../components/DocumentPreview";
 import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Pager, RowButton, Skeleton, StatCard, Tabs, paginate, useSelectedFromUrl } from "../../components/ui";
 import { fullDay, parseRands, plural, rands, shortDay, todaySA } from "../../lib/format";
 import { projectRef } from "../member/MyProjects";
 import "../overview.css";
 import "../pages.css";
+
+export const CLIENT_KINDS: { key: ClientKind; label: string }[] = [
+  { key: "company", label: "Company (Pty) Ltd / CC" },
+  { key: "sole_proprietor", label: "Sole proprietor" },
+  { key: "individual", label: "Individual" },
+  { key: "npo", label: "NPO / NGO / school" },
+  { key: "government", label: "Government / municipality" },
+  { key: "other", label: "Other" },
+];
 
 type Tab = "clients" | "quotations" | "invoices" | "receipts" | "credit-notes";
 const TABS: { key: Tab; label: string }[] = [
@@ -269,6 +278,10 @@ function ClientsTab({ ctx }: { ctx: Ctx }) {
                 <dt>Billing</dt>
                 <dd style={{ fontWeight: 400, whiteSpace: "pre-line" }}>{c.address ?? "No address saved"}</dd>
                 {c.registration_number && <dd style={{ marginTop: 2, fontWeight: 400 }}>Reg. {c.registration_number}</dd>}
+                {c.vat_number && <dd style={{ marginTop: 2, fontWeight: 400 }}>VAT {c.vat_number}</dd>}
+                <dd style={{ marginTop: 2, fontWeight: 400 }} className="row-sub">
+                  {CLIENT_KINDS.find((k) => k.key === c.kind)?.label ?? "Company"} · payment reminders {c.reminders_enabled ? (c.email ? "on" : "on (needs an email)") : "off"}
+                </dd>
               </div>
               <div>
                 <dt>Projects</dt>
@@ -296,10 +309,45 @@ function ClientsTab({ ctx }: { ctx: Ctx }) {
                 Create quotation
               </button>
             </div>
+            <StatementActions client={c} />
           </section>
         )}
       </div>
     </>
+  );
+}
+
+/** Statement of account: preview it, or number it (SP-SOA) and email it to the client. */
+function StatementActions({ client }: { client: Client }) {
+  const preview = usePreview();
+  const [done, setDone] = useState<string | null>(null);
+  const open = () => {
+    setDone(null);
+    preview({
+      title: `Statement of account: ${client.name}`,
+      filename: `Statement-${client.name}.pdf`,
+      note: client.email
+        ? `Sending numbers it (SP-SOA) and emails it to ${client.email} with this PDF.`
+        : "This client has no email address: add one to send statements.",
+      load: () => apiBlob(`/api/clients/${client.id}/statement.pdf`),
+      confirm: client.email
+        ? {
+            label: "Send statement",
+            run: () =>
+              post<StatementResult>(`/api/clients/${client.id}/statements`, { email: true }).then((r) =>
+                setDone(r.emailed ? `Statement ${r.number} emailed to ${client.email}.` : `Statement ${r.number} saved, but the email could not be sent.`),
+              ),
+          }
+        : undefined,
+    });
+  };
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button className="btn btn-secondary" onClick={open}>
+        Statement of account
+      </button>
+      <Done text={done} />
+    </div>
   );
 }
 
@@ -885,12 +933,19 @@ function ClientDialog({ client, onClose, onSaved }: { client?: Client; onClose: 
     email: client?.email ?? "",
     phone: client?.phone ?? "",
     registration_number: client?.registration_number ?? "",
+    vat_number: client?.vat_number ?? "",
     address: client?.address ?? "",
   });
+  const [kind, setKind] = useState<ClientKind>(client?.kind ?? "company");
+  const [reminders, setReminders] = useState(client?.reminders_enabled ?? true);
   const [error, setError] = useState<unknown>(null);
   const save = useMutation({
     mutationFn: () => {
-      const body = JSON.stringify(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null])));
+      const body = JSON.stringify({
+        ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim() || null])),
+        kind,
+        reminders_enabled: reminders,
+      });
       return client ? api<Client>(`/api/clients/${client.id}`, { method: "PATCH", body }) : api<Client>("/api/clients", { method: "POST", body });
     },
     onSuccess: onSaved,
@@ -913,11 +968,25 @@ function ClientDialog({ client, onClose, onSaved }: { client?: Client; onClose: 
           <input id="cl-name" className="input" maxLength={200} value={f.name} onChange={set("name")} autoFocus />
         </Field>
         <div className="form-row" style={{ gap: 14 }}>
+          <Field id="cl-kind" label="Type of client">
+            <select id="cl-kind" className="input" value={kind} onChange={(e) => setKind(e.target.value as ClientKind)}>
+              {CLIENT_KINDS.map((k) => (
+                <option key={k.key} value={k.key}>
+                  {k.label}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field id="cl-contact" label="Contact person">
             <input id="cl-contact" className="input" maxLength={200} value={f.contact_name} onChange={set("contact_name")} />
           </Field>
-          <Field id="cl-reg" label="Registration number">
+        </div>
+        <div className="form-row" style={{ gap: 14 }}>
+          <Field id="cl-reg" label="Registration number (if any)" hint="Leave empty for individuals and unregistered businesses.">
             <input id="cl-reg" className="input" maxLength={60} value={f.registration_number} onChange={set("registration_number")} />
+          </Field>
+          <Field id="cl-vat" label="Client VAT number (if any)">
+            <input id="cl-vat" className="input" maxLength={32} value={f.vat_number} onChange={set("vat_number")} />
           </Field>
         </div>
         <div className="form-row" style={{ gap: 14 }}>
@@ -931,6 +1000,10 @@ function ClientDialog({ client, onClose, onSaved }: { client?: Client; onClose: 
         <Field id="cl-address" label="Billing address">
           <textarea id="cl-address" className="input textarea" maxLength={1000} value={f.address} onChange={set("address")} />
         </Field>
+        <label className="row-sub" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={reminders} onChange={(e) => setReminders(e.target.checked)} style={{ marginTop: 3 }} />
+          <span>Email this client payment reminders and monthly statements automatically (needs an email address).</span>
+        </label>
         <FormError error={error} />
         <div className="form-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose}>
@@ -945,10 +1018,10 @@ function ClientDialog({ client, onClose, onSaved }: { client?: Client; onClose: 
   );
 }
 
-type LineDraft = { description: string; quantity: string; price: string };
-const emptyLine = (): LineDraft => ({ description: "", quantity: "1", price: "" });
+export type LineDraft = { description: string; quantity: string; price: string };
+export const emptyLine = (): LineDraft => ({ description: "", quantity: "1", price: "" });
 
-function parseLines(lines: LineDraft[]): LineInput[] | string {
+export function parseLines(lines: LineDraft[]): LineInput[] | string {
   const out: LineInput[] = [];
   for (const l of lines) {
     if (!l.description.trim() && !l.price.trim()) continue;
@@ -962,7 +1035,7 @@ function parseLines(lines: LineDraft[]): LineInput[] | string {
   return out.length ? out : "Add at least one line.";
 }
 
-function LineEditor({ lines, onChange }: { lines: LineDraft[]; onChange: (l: LineDraft[]) => void }) {
+export function LineEditor({ lines, onChange }: { lines: LineDraft[]; onChange: (l: LineDraft[]) => void }) {
   const set = (i: number, k: keyof LineDraft, v: string) => onChange(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const total = lines.reduce((s, l) => s + (Number(l.quantity.replace(",", ".")) || 0) * (parseRands(l.price) ?? 0), 0);
   return (

@@ -191,7 +191,7 @@ describe("Audit history", () => {
 describe("Founder settings", () => {
   const routes = {
     "/api/finance/readiness": { vat_registered: false, registration_number_set: true, bank_details_set: true, signatory_name_set: true, signature_set: true, missing: [] },
-    "/api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: true },
+    "/api/auth/notifications": { offers: true, reviews: true, payouts: true, invoices: true, client_reminders: true, client_statements: true },
     "/api/audit": [{ id: 9, actor: "admin", action: "auth.login", entity: "user", entity_id: 1, before: null, after: null, at: "2026-11-27T07:30:00Z" }],
     "/api/company": {
       company_name: "SaxsProjects", company_legal_name: "SaxsProjects (Pty) Ltd", company_registration_number: "2026/941760/07", company_vat_number: "",

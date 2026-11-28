@@ -14,17 +14,22 @@ from .db import get_db
 from .jobs import run_daily
 from .pdf import load_signature
 from .routers import (
+    assistant,
     auth,
     avatars,
+    certificates,
     company,
     devices,
     finance,
     me,
+    notifications,
     offers,
     overview,
     pages,
     people,
     projects,
+    proposals,
+    reports,
     task_orders,
     templates,
 )
@@ -69,7 +74,25 @@ def create_app() -> FastAPI:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         return response
 
-    for module in (auth, devices, people, offers, projects, task_orders, finance, company, me, overview, avatars, templates):
+    for module in (
+        auth,
+        devices,
+        people,
+        offers,
+        projects,
+        task_orders,
+        finance,
+        company,
+        me,
+        overview,
+        avatars,
+        templates,
+        notifications,
+        reports,
+        proposals,
+        certificates,
+        assistant,
+    ):
         app.include_router(module.router)
     app.include_router(offers.public)
     app.include_router(pages.router)

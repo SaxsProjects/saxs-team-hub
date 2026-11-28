@@ -58,6 +58,21 @@ export interface Dashboard {
   task_reviews_overdue: number;
   people_by_status: Record<string, number>;
   received_this_year_cents: number;
+  vat: VatPosition;
+}
+
+export type VatStatus = "registered" | "below" | "voluntary_possible" | "approaching" | "must_register";
+
+export interface VatPosition {
+  registered: boolean;
+  vat_number: string | null;
+  rate_bp: number;
+  taxable_12m_cents: number;
+  compulsory_threshold_cents: number;
+  voluntary_threshold_cents: number;
+  share_of_compulsory_bp: number;
+  status: VatStatus;
+  message: string;
 }
 
 export interface MemberOverview {
@@ -282,10 +297,15 @@ export interface FounderTaskOrder extends TaskOrder {
   closed_reason: string | null;
 }
 
+export type ClientKind = "company" | "sole_proprietor" | "individual" | "npo" | "government" | "other";
+
 export interface Client {
   id: number;
   name: string;
+  kind: ClientKind;
   registration_number: string | null;
+  vat_number: string | null;
+  reminders_enabled: boolean;
   contact_name: string | null;
   email: string | null;
   phone: string | null;
@@ -393,6 +413,8 @@ export interface NotificationPrefs {
   reviews: boolean;
   payouts: boolean;
   invoices: boolean;
+  client_reminders: boolean;
+  client_statements: boolean;
 }
 
 export interface CompanyDetails {
@@ -436,4 +458,143 @@ export interface CompanyTemplate {
   updated_by: string;
   current: TemplateVersion;
   versions: TemplateVersion[];
+}
+
+// ---- v2.0 ----------------------------------------------------------------------------------------
+
+export interface NotificationItem {
+  id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface NotificationList {
+  unread: number;
+  items: NotificationItem[];
+}
+
+export interface AssistantItem {
+  id: string;
+  priority: "high" | "normal" | "info";
+  title: string;
+  detail: string;
+  link: string;
+  action: string;
+}
+
+export interface AssistantBriefing {
+  greeting: string;
+  summary: string;
+  today: string;
+  items: AssistantItem[];
+  autopilot: Partial<Record<"client_reminders" | "client_statements" | "monthly_report", boolean>>;
+}
+
+export type ProposalStatus = "draft" | "issued" | "accepted" | "declined" | "expired";
+export type ProposalService = "website" | "web_app" | "mobile_app" | "ecommerce" | "automation" | "it_support" | "custom";
+
+export interface ProposalItem {
+  description: string;
+  quantity: number;
+  unit_price_cents: number;
+}
+
+export interface Proposal {
+  id: number;
+  number: string | null;
+  client_id: number;
+  title: string;
+  status: ProposalStatus;
+  service: ProposalService;
+  introduction: string | null;
+  need: string | null;
+  solution: string | null;
+  scope: string | null;
+  timeline: string | null;
+  why_us: string | null;
+  items: ProposalItem[];
+  vat_rate_bp: number;
+  subtotal_cents: number;
+  vat_cents: number;
+  total_cents: number;
+  issue_date: string | null;
+  valid_until: string | null;
+  quotation_id: number | null;
+  pdf_sha256: string | null;
+  created_at: string;
+}
+
+export type CertificateKind =
+  | "completion"
+  | "achievement"
+  | "appreciation"
+  | "participation"
+  | "recognition"
+  | "training"
+  | "service"
+  | "project"
+  | "partnership"
+  | "custom";
+
+export interface CertificatePreset {
+  kind: CertificateKind;
+  title: string;
+  subtitle: string;
+  lead: string;
+  body: string;
+}
+
+export interface Certificate {
+  id: number;
+  number: string;
+  kind: CertificateKind;
+  title: string;
+  subtitle: string | null;
+  lead: string;
+  recipient_name: string;
+  body: string;
+  issue_date: string;
+  place: string;
+  verify_code: string;
+  verify_url: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+  pdf_sha256: string;
+  created_at: string;
+}
+
+export interface FinanceReport {
+  month: string;
+  prepared_on: string;
+  totals: {
+    invoiced_excl_cents: number;
+    vat_cents: number;
+    invoiced_incl_cents: number;
+    credited_cents: number;
+    received_cents: number;
+    payouts_paid_cents: number;
+    costs_cents: number;
+    net_cash_cents: number;
+  };
+  position: {
+    open_count: number;
+    outstanding_cents: number;
+    overdue_count: number;
+    overdue_cents: number;
+    payouts_unpaid_cents: number;
+    quotations_open: number;
+    proposals_open: number;
+  };
+  clients: { name: string; count: number; total_cents: number }[];
+  vat: { message: string; compulsory_threshold_cents: number; share_of_compulsory_bp: number };
+}
+
+export interface StatementResult {
+  number: string;
+  document_id: number;
+  emailed: boolean;
 }

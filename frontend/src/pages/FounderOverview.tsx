@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { useViewFile } from "../components/DocumentPreview";
 import type { AuditEntry, Dashboard, Project, TaskOrder } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { AssistantPanel, VatCard } from "../components/Assistant";
 import { ErrorNote, Skeleton, StatCard } from "../components/ui";
 import { describeAudit } from "../lib/activity";
 import { clock, dayMonth, firstName, greeting, longDate, plural, rands, shortDate } from "../lib/format";
@@ -157,6 +158,11 @@ export function FounderOverview() {
             ))}
           </div>
         </section>
+      </div>
+
+      <div className="grid-2-1">
+        <AssistantPanel />
+        <VatCard vat={d?.vat} />
       </div>
 
       <div className="stats-4">
