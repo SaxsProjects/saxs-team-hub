@@ -404,6 +404,7 @@ export interface CompanyDetails {
   company_email: string;
   company_phone: string;
   company_website: string;
+  company_whatsapp: string;
   company_bank_name: string;
   company_bank_account_name: string;
   company_bank_account_number: string;
@@ -411,4 +412,28 @@ export interface CompanyDetails {
   company_bank_account_type: string;
   signatory_name: string;
   signatory_title: string;
+}
+
+export type TemplateCategory = "letterhead" | "offer" | "contract" | "policy" | "finance" | "other";
+
+export interface TemplateVersion {
+  version: number;
+  filename: string;
+  size: number;
+  sha256: string;
+  note: string | null;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface CompanyTemplate {
+  id: number;
+  name: string;
+  category: TemplateCategory;
+  description: string | null;
+  archived: boolean;
+  updated_at: string;
+  updated_by: string;
+  current: TemplateVersion;
+  versions: TemplateVersion[];
 }

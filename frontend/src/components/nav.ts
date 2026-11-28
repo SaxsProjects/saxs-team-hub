@@ -1,5 +1,6 @@
 import {
   FileClock,
+  FileStack,
   FileText,
   Folder,
   LayoutDashboard,
@@ -27,6 +28,7 @@ export const FOUNDER_NAV: NavItem[] = [
   { to: "/task-orders", label: "Task Orders", title: "Task Orders", icon: SquareCheck, badgeKey: "reviews" },
   { to: "/finance", label: "Client finance", title: "Client finance", icon: FileText },
   { to: "/payouts", label: "Payouts", title: "Payouts", icon: Wallet },
+  { to: "/templates", label: "Templates", title: "Company templates", icon: FileStack },
   { to: "/audit", label: "Audit history", title: "Audit history", icon: FileClock },
 ];
 

@@ -59,8 +59,9 @@ def company_ready(monkeypatch, signed):
 
 
 def has_image(pdf_bytes: bytes) -> bool:
-    # Object dictionaries are not compressed, so an embedded image shows up as /Subtype /Image.
-    return b"/Subtype /Image" in pdf_bytes
+    """True when the director's signature is embedded. Object dictionaries are not compressed, so each
+    embedded image shows up as /Subtype /Image; every document carries the logo, so a signed one has two."""
+    return pdf_bytes.count(b"/Subtype /Image") >= 2
 
 
 def new_client(client, admin, name="Glow Salon"):

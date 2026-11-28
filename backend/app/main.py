@@ -13,7 +13,21 @@ from .config import get_settings
 from .db import get_db
 from .jobs import run_daily
 from .pdf import load_signature
-from .routers import auth, avatars, company, devices, finance, me, offers, overview, pages, people, projects, task_orders
+from .routers import (
+    auth,
+    avatars,
+    company,
+    devices,
+    finance,
+    me,
+    offers,
+    overview,
+    pages,
+    people,
+    projects,
+    task_orders,
+    templates,
+)
 from .version import __version__
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -55,7 +69,7 @@ def create_app() -> FastAPI:
             response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         return response
 
-    for module in (auth, devices, people, offers, projects, task_orders, finance, company, me, overview, avatars):
+    for module in (auth, devices, people, offers, projects, task_orders, finance, company, me, overview, avatars, templates):
         app.include_router(module.router)
     app.include_router(offers.public)
     app.include_router(pages.router)

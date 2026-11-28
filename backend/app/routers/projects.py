@@ -28,7 +28,7 @@ from ..schemas import (
     ProjectOut,
     ProjectUpdate,
 )
-from ..services import audit, payout_due_date, today_local
+from ..services import audit, local_tz, payout_due_date, today_local
 from ..terms import rate_at, release_deferred_fees
 from .people import get_person
 
@@ -326,7 +326,7 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
             due_at=payout.due_at.isoformat() if payout.due_at else None,
             paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
             eft_reference=payout.eft_reference,
-            issued_on=payout.created_at.date(),
+            issued_on=payout.created_at.astimezone(local_tz()).date(),
             company=company_settings(db),
         )
         headers = {"Content-Disposition": f'inline; filename="{payout.statement_number}.pdf"'}
@@ -342,7 +342,7 @@ def payout_statement(payout_id: int, db: Session = Depends(get_db), user: User =
         due_at=payout.due_at.isoformat(),
         paid_at=payout.paid_at.date().isoformat() if payout.paid_at else None,
         eft_reference=payout.eft_reference,
-        issued_on=payout.created_at.date(),
+        issued_on=payout.created_at.astimezone(local_tz()).date(),
         company=company_settings(db),
     )
     return Response(

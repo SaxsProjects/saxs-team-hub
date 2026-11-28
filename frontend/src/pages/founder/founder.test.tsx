@@ -20,6 +20,7 @@ import { FounderSettings } from "./FounderSettings";
 import { Finance } from "./Finance";
 import { Payouts } from "./Payouts";
 import { TaskOrders } from "./TaskOrders";
+import { Templates } from "./Templates";
 
 type Call = { url: string; method: string; body: unknown };
 const pdf = () => new Response("%PDF-1.4", { status: 200, headers: { "Content-Type": "application/pdf" } });
@@ -194,7 +195,7 @@ describe("Founder settings", () => {
     "/api/audit": [{ id: 9, actor: "admin", action: "auth.login", entity: "user", entity_id: 1, before: null, after: null, at: "2026-11-27T07:30:00Z" }],
     "/api/company": {
       company_name: "SaxsProjects", company_legal_name: "SaxsProjects (Pty) Ltd", company_registration_number: "2026/941760/07", company_vat_number: "",
-      company_address: "", company_email: "", company_phone: "", company_website: "", company_bank_name: "Capitec", company_bank_account_name: "",
+      company_address: "", company_email: "", company_phone: "", company_website: "", company_whatsapp: "", company_bank_name: "Capitec", company_bank_account_name: "",
       company_bank_account_number: "1234567890", company_bank_branch_code: "470010", company_bank_account_type: "", signatory_name: "P. Mamagau", signatory_title: "Director",
     },
   };
@@ -222,5 +223,50 @@ describe("Founder settings", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("current password");
     expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+});
+
+const TEMPLATE = {
+  id: 3, name: "Offer letter", category: "offer", description: "Standard offer letter", archived: false,
+  updated_at: "2026-11-28T08:00:00Z", updated_by: "f@example.com",
+  current: { version: 2, filename: "offer-v2.pdf", size: 2048, sha256: "a".repeat(64), note: "New clause 4", uploaded_by: "f@example.com", created_at: "2026-11-28T08:00:00Z" },
+  versions: [
+    { version: 2, filename: "offer-v2.pdf", size: 2048, sha256: "a".repeat(64), note: "New clause 4", uploaded_by: "f@example.com", created_at: "2026-11-28T08:00:00Z" },
+    { version: 1, filename: "offer.pdf", size: 1024, sha256: "b".repeat(64), note: null, uploaded_by: "f@example.com", created_at: "2026-11-20T08:00:00Z" },
+  ],
+};
+
+describe("Company templates", () => {
+  it("lists templates, previews the current and earlier versions, and archives", async () => {
+    const calls = renderPage(<Templates />, {
+      "/api/templates": [TEMPLATE],
+      "/api/templates/3/pdf": pdf,
+      "POST /api/templates/3/archive": { ...TEMPLATE, archived: true },
+    });
+    const user = userEvent.setup();
+    expect(await screen.findByRole("heading", { name: "Offer letter" })).toBeInTheDocument();
+    expect(screen.getByText(/^Version 1 ·/)).toBeInTheDocument(); // the earlier version is kept
+
+    await user.click(screen.getAllByRole("button", { name: "View" })[0]!);
+    expect(await screen.findByText("Rendered PDF page")).toBeInTheDocument();
+    expect(calls.some((c) => c.url === "/api/templates/3/pdf")).toBe(true);
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    expect(await screen.findByText(/Offer letter archived/)).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST" && c.url === "/api/templates/3/archive")).toBe(true);
+  });
+
+  it("only accepts a PDF when adding a template", async () => {
+    const calls = renderPage(<Templates />, { "/api/templates": [] });
+    const user = userEvent.setup({ applyAccept: false });
+    expect(await screen.findByText(/No templates yet/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Add template/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Letterhead");
+    await user.upload(within(dialog).getByLabelText(/Choose a PDF/), new File(["hi"], "notes.txt", { type: "text/plain" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add template" }));
+    expect(await within(dialog).findByText("The template must be a PDF under 10 MB.")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 });

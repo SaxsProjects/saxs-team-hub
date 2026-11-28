@@ -115,7 +115,8 @@ The web app draws PDFs with pdf.js, so previews work on phones and in the Androi
 |---|---|
 | `COMPANY_LEGAL_NAME`, `COMPANY_REGISTRATION_NUMBER`, `COMPANY_VAT_NUMBER` | Invoices cannot be issued until the registration number is set |
 | `COMPANY_ADDRESS` | Lines separated by `|` |
-| `COMPANY_EMAIL`, `COMPANY_PHONE`, `COMPANY_WEBSITE` | |
+| `COMPANY_EMAIL`, `COMPANY_PHONE`, `COMPANY_WEBSITE`, `COMPANY_WHATSAPP` | |
+| `COMPANY_TAGLINE`, `COMPANY_SLOGAN` | Printed under the company name and in the footer of every document |
 | `COMPANY_BANK_NAME`, `COMPANY_BANK_ACCOUNT_NAME`, `COMPANY_BANK_ACCOUNT_NUMBER`, `COMPANY_BANK_BRANCH_CODE`, `COMPANY_BANK_ACCOUNT_TYPE` | Never committed. Invoices cannot be issued until name, account number and branch code are set |
 | `QUOTE_VALID_DAYS` (30), `INVOICE_DUE_DAYS` (7), `DEPOSIT_PERCENT` (50), `VAT_RATE_BP` (1500) | Defaults in brackets |
 
@@ -128,6 +129,12 @@ over the variables. `GET /api/finance/readiness` lists anything still missing.
 
 `GET /api/audit?scope=workspace` returns business activity only; `scope=account` returns sign-ins, security
 events and personal settings (shown in Settings → Security instead of Audit history).
+
+## Document layout and the company template library
+
+`app/pdf.py` draws every issued document on the layout of the company templates (logo `app/assets/logo-full.png`, title block, From / To, light-blue box, navy striped table, notes beside the totals and the blue amount bar, footer).
+
+The template library (`app/routers/templates.py`, founder only) keeps the official PDFs: `GET/POST /api/templates`, `PUT /api/templates/{id}`, `POST /api/templates/{id}/versions`, `POST /api/templates/{id}/archive|restore` and `GET /api/templates/{id}/pdf?version=n`. Files are stored as `documents` rows (kind `company_template`); each upload is a row in `company_template_versions`, so earlier versions are never replaced. Templates are archived, never deleted, and every change is audited. The new-offer form can load a template's current version as the proposal.
 
 ## Client IP addresses and sign-in limits
 

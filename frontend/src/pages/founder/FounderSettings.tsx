@@ -41,6 +41,7 @@ const COMPANY_FIELDS: CompanyField[] = [
   { key: "company_email", label: "Accounts email", type: "email", inputMode: "email" },
   { key: "company_phone", label: "Phone", type: "tel", inputMode: "tel" },
   { key: "company_website", label: "Website", inputMode: "url" },
+  { key: "company_whatsapp", label: "WhatsApp", type: "tel", inputMode: "tel", hint: "Printed on quotations, invoices and receipts." },
   { key: "signatory_name", label: "Signatory name", hint: "The person whose signature prints on issued documents." },
   { key: "signatory_title", label: "Signatory title" },
 ];

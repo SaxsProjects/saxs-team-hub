@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { api, post } from "../../api/client";
-import type { Offer, Person, PersonStage, Pipeline, PipelineCard } from "../../api/types";
+import { api, apiBlob, post } from "../../api/client";
+import type { CompanyTemplate, Offer, Person, PersonStage, Pipeline, PipelineCard } from "../../api/types";
 import { Dialog, Done, EmptyRow, ErrorNote, Field, FormError, LoadingRow, PageHead, Skeleton, StatCard } from "../../components/ui";
 import { fileSize, percent, plural, shortDay, todaySA } from "../../lib/format";
 import "../overview.css";
@@ -162,6 +162,28 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
   const fileRef = useRef<HTMLInputElement>(null);
   const person = candidates.find((p) => String(p.id) === f.person_id);
   const preview = usePreview();
+  const templates = useQuery({
+    queryKey: ["templates", false],
+    queryFn: () => api<CompanyTemplate[]>("/api/templates"),
+    select: (all) => all.filter((t) => t.category === "offer" || t.category === "contract"),
+  });
+  const [fromTemplate, setFromTemplate] = useState("");
+
+  async function pickTemplate(id: string) {
+    setFromTemplate(id);
+    const t = templates.data?.find((x) => String(x.id) === id);
+    if (!t) return;
+    setError(null);
+    try {
+      // The template's current version becomes this offer's proposal, exactly as stored.
+      const blob = await apiBlob(`/api/templates/${t.id}/pdf`);
+      setFile(new File([blob], `${t.name}.pdf`, { type: "application/pdf" }));
+      if (fileRef.current) fileRef.current.value = "";
+    } catch (e) {
+      setFromTemplate("");
+      setError(e);
+    }
+  }
 
   const save = useMutation({
     mutationFn: async (send: boolean) => {
@@ -177,6 +199,7 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
     onSuccess: ({ offer, send }) => {
       setF({ ...f, person_id: "", role: "", deadline: "" });
       setFile(null);
+      setFromTemplate("");
       if (fileRef.current) fileRef.current.value = "";
       onDone(send ? `Offer ${offer.reference} emailed to ${person?.full_name}.` : `Offer ${offer.reference} saved as a draft.`);
     },
@@ -246,9 +269,21 @@ function NewOffer({ candidates, onDone, onAddPerson }: { candidates: Person[]; o
               </span>
               <span className="row-sub">{file ? `PDF · ${fileSize(file.size)}` : "PDF, up to 10 MB"}</span>
             </span>
-            <input id="o-file" ref={fileRef} type="file" accept="application/pdf" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input id="o-file" ref={fileRef} type="file" accept="application/pdf" className="sr-only" onChange={(e) => (setFromTemplate(""), setFile(e.target.files?.[0] ?? null))} />
           </label>
         </Field>
+        {(templates.data?.length ?? 0) > 0 && (
+          <Field id="o-template" label="Or use a company template" hint="Its current version becomes the proposal. You see it before anything is sent.">
+            <select id="o-template" className="input" value={fromTemplate} onChange={(e) => void pickTemplate(e.target.value)}>
+              <option value="">Choose a template</option>
+              {templates.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} (version {t.current.version})
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field id="o-message" label="Message">
           <textarea id="o-message" className="input textarea" maxLength={5000} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} />
         </Field>
