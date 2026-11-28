@@ -16,6 +16,7 @@ from .pdf import load_signature
 from .routers import (
     auth,
     avatars,
+    certificates,
     company,
     devices,
     finance,
@@ -26,6 +27,7 @@ from .routers import (
     pages,
     people,
     projects,
+    proposals,
     reports,
     task_orders,
     templates,
@@ -86,6 +88,8 @@ def create_app() -> FastAPI:
         templates,
         notifications,
         reports,
+        proposals,
+        certificates,
     ):
         app.include_router(module.router)
     app.include_router(offers.public)

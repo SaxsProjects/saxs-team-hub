@@ -15,6 +15,7 @@ from .emailer import notify_admin
 from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, TaskOrder, User
 from .notifications import purge_old
 from .payouts import format_zar
+from .routers.proposals import expire_proposals
 from .services import audit, today_local
 
 
@@ -131,6 +132,7 @@ def run_daily(db: Session) -> dict:
         "payouts_due": remind_due_payouts(db),
         "task_reviews_overdue": remind_overdue_reviews(db),
         "people_purged": apply_retention(db),
+        "proposals_expired": expire_proposals(db),
         "client_reminders_sent": send_client_reminders(db),
         "statements_sent": send_monthly_statements(db),
         "monthly_report_sent": send_monthly_report(db),

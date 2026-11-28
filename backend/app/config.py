@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     vat_compulsory_threshold_cents: int = 230_000_000
     vat_voluntary_threshold_cents: int = 12_000_000
     quote_valid_days: int = 30
+    proposal_valid_days: int = 30
+    certificate_place: str = "Thohoyandou, South Africa"  # printed under the date on certificates
     invoice_due_days: int = 7
     deposit_percent: int = 50
 
