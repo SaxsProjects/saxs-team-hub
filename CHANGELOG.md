@@ -4,6 +4,21 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [2.2.0] - 2026-11-28
+
+### Added
+- **Connected systems** (Settings). The founder can make API keys for other SaxsProjects systems such as
+  SAXI-OS. A key is shown once, stored only as a hash, and limited to the permissions chosen: read clients,
+  quotations, invoices or website enquiries, and save draft proposals. Keys can be revoked at any time and
+  show when they were last used.
+- **Integration API** (`/api/integrations/v1`, header `X-Api-Key`): `GET clients`, `quotations`, `invoices`,
+  `enquiries`, and `POST proposals` (saved as a draft; rings the founder's bell; recorded in the audit history
+  under the key's name). The Team Hub stays the system of record for money: no key can issue a document,
+  record a payment or change a payout.
+
+### Upgrading
+- Database update `b3e8f1a4d6c2` only adds the `api_keys` table.
+
 ## [2.1.0] - 2026-11-28
 
 ### Added

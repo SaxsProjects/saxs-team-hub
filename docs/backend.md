@@ -175,3 +175,7 @@ One request per screen, aggregated in the database:
 
 - **Website enquiries** (`app/routers/enquiries.py`): `POST /api/public/enquiries` takes a text/plain JSON body (a CORS "simple" request, so no preflight and no cookies), answers only `WEBSITE_ORIGINS`, is rate-limited, and has a honeypot field `website`. Founder endpoints: `GET /api/enquiries`, `PATCH /api/enquiries/{id}`, `POST /api/enquiries/{id}/client`.
 - **Discord** (`emailer.post_to_discord`): only `https://discord.com/api/webhooks/...` URLs are used; title and link only, mentions disabled, sent on a background thread.
+
+## v2.2 additions
+
+- **Integration API keys** (`app/routers/integrations.py`): founder endpoints `GET/POST /api/api-keys`, `POST /api/api-keys/{id}/revoke` (two-factor required); system endpoints under `/api/integrations/v1` with `X-Api-Key: sphub_...`. Keys are SHA-256 hashed, scope-checked per route, rate-limited (120/min per IP), and never allow issuing, payments or payouts. SAXI-OS uses this instead of keeping its own invoices.

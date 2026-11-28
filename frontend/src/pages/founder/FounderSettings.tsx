@@ -8,6 +8,7 @@ import { Dialog, Done, Field, FormError, PageHead, Skeleton } from "../../compon
 import { describeAudit } from "../../lib/activity";
 import { clock, shortDate } from "../../lib/format";
 import { PasswordDialog } from "../member/MemberSettings";
+import { ApiKeysCard } from "./ApiKeys";
 import "../overview.css";
 import "../pages.css";
 
@@ -202,6 +203,7 @@ export function FounderSettings() {
         </section>
 
         <NotificationsCard />
+        <ApiKeysCard />
       </div>
 
       {dialog === "password" && <PasswordDialog onClose={() => setDialog(null)} onDone={() => (setDialog(null), setDone("Password changed."))} />}
