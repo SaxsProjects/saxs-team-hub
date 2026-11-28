@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     company_email: str = ""
     company_phone: str = ""
     company_website: str = ""
+    company_whatsapp: str = ""
+    # Printed under the company name on documents, and the slogan in the footer.
+    company_tagline: str = "Software Development Studio, South Africa"
+    company_slogan: str = "We build digital solutions"
     # Banking details printed on invoices. Environment variables only: never commit them.
     company_bank_name: str = ""
     company_bank_account_name: str = ""

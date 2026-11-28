@@ -552,6 +552,7 @@ def _invoice_after(inv: Invoice, less_cents: int) -> SimpleNamespace:
         issue_date=inv.issue_date,
         client=inv.client,
         total_cents=inv.total_cents,
+        credited_cents=inv.credited_cents,
         balance_cents=inv.balance_cents - less_cents,
     )
 

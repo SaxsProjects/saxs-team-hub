@@ -3,6 +3,11 @@ import type { AuditEntry } from "../api/types";
 /** Plain-English wording for audit-log entries (Recent activity, the bell, Audit history). */
 const TITLES: Record<string, string> = {
   "auth.login": "Signed in",
+  "template.create": "Template added",
+  "template.new_version": "Template updated",
+  "template.edit": "Template details changed",
+  "template.archive": "Template archived",
+  "template.restore": "Template restored",
   "auth.2fa_enabled": "Two-factor turned on",
   "auth.reset_requested": "Password reset requested",
   "auth.reset_password": "Password reset",

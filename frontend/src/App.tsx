@@ -49,6 +49,7 @@ const TaskOrders = lazy(() =>
 const TeamOffers = lazy(() =>
   import("./pages/founder/TeamOffers").then((m) => ({ default: m.TeamOffers })),
 );
+const Templates = lazy(() => import("./pages/founder/Templates").then((m) => ({ default: m.Templates })));
 
 export function App() {
   const { me, loading } = useAuth();
@@ -103,6 +104,7 @@ export function App() {
           <Route path="/finance/:tab" element={<Finance />} />
           <Route path="/payouts" element={<Payouts />} />
           <Route path="/audit" element={<AuditHistory />} />
+          <Route path="/templates" element={<Templates />} />
           <Route path="/settings" element={<FounderSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

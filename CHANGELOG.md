@@ -4,6 +4,31 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [1.9.0] - 2026-11-28
+
+### Added
+- **Company template library** (founder only, new "Templates" page). Keep the official letterhead, offer letters,
+  contracts and policies in the Team Hub as PDFs, grouped by category. Uploading a new file adds a version and
+  keeps the earlier ones, which can still be viewed. Templates are archived, never deleted, and every change is
+  in the audit history.
+- **New offers can use a template**: choose an offer letter or contract from the library and its current version
+  becomes the proposal. You still see the proposal and the email before anything is sent.
+- **WhatsApp number** in the company details (Settings). It prints on documents next to the email and phone.
+
+### Changed
+- **Quotations, invoices, receipts, credit notes and payout and task-fee statements now follow the company
+  templates**: the logo and company details at the top, a large title with the numbers on the right, From and
+  Bill to side by side, a light-blue box for banking details, project scope or the calculation basis, a navy
+  table with striped rows, notes on the left with the totals and a blue amount bar on the right, and the
+  company line in the footer. The wording follows the templates too (payment terms, ownership, client
+  acceptance, the 14-day query window and the tax note on statements).
+- A quotation's "Issued by" signature and the client acceptance lines now sit side by side, so a normal
+  quotation fits on one page.
+
+### Fixed
+- Payout and task-fee statements and offer acceptance records were dated in UTC instead of South African time,
+  so a payment recorded between midnight and 02:00 showed the previous day.
+
 ## [1.8.1] - 2026-11-27
 
 ### Changed

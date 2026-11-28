@@ -33,6 +33,7 @@ class CompanyDetails(BaseModel):
     company_email: str = Field("", max_length=320)
     company_phone: str = Field("", max_length=40)
     company_website: str = Field("", max_length=200)
+    company_whatsapp: str = Field("", max_length=40)
     company_bank_name: str = Field("", max_length=80)
     company_bank_account_name: str = Field("", max_length=120)
     company_bank_account_number: str = Field("", max_length=20)

@@ -24,6 +24,7 @@ EDITABLE = (
     "company_email",
     "company_phone",
     "company_website",
+    "company_whatsapp",
     "company_bank_name",
     "company_bank_account_name",
     "company_bank_account_number",

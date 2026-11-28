@@ -22,7 +22,19 @@ from .db import Base, UTCDateTime, utcnow
 STAGES = ("draft", "sent", "viewed", "accepted", "declined", "expired", "agreement_signed", "onboarded")
 OFFER_STATUSES = ("draft", "sent", "viewed", "accepted", "declined", "expired", "revoked")
 PROJECT_STATUSES = ("planned", "in_progress", "completed", "cancelled")
-DOCUMENT_KINDS = ("offer_pdf", "acceptance", "agreement", "other", "quotation", "invoice", "receipt", "credit_note")
+DOCUMENT_KINDS = (
+    "offer_pdf",
+    "acceptance",
+    "agreement",
+    "other",
+    "quotation",
+    "invoice",
+    "receipt",
+    "credit_note",
+    "company_template",
+)
+# The company template library (Settings > Templates).
+TEMPLATE_CATEGORIES = ("letterhead", "offer", "contract", "policy", "finance", "other")
 ROLES = ("admin", "member")
 QUOTATION_STATUSES = ("draft", "issued", "accepted", "declined", "expired")
 INVOICE_STATUSES = ("draft", "issued", "part_paid", "paid", "void")
@@ -596,3 +608,47 @@ class AuditLog(Base):
     before: Mapped[dict | None] = mapped_column(JSON)
     after: Mapped[dict | None] = mapped_column(JSON)
     at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+
+
+class CompanyTemplate(Base):
+    """An official company template (letterhead, offer letter, contract...). Founder only.
+
+    Uploading a new file adds a version; earlier versions are kept. Templates are archived, never deleted."""
+
+    __tablename__ = "company_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    category: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(Text)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(320))
+
+    versions: Mapped[list["CompanyTemplateVersion"]] = relationship(
+        back_populates="template", order_by="desc(CompanyTemplateVersion.version)"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('letterhead', 'offer', 'contract', 'policy', 'finance', 'other')", name="ck_company_template_category"
+        ),
+    )
+
+
+class CompanyTemplateVersion(Base):
+    __tablename__ = "company_template_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("company_templates.id", ondelete="RESTRICT"), index=True)
+    version: Mapped[int] = mapped_column(Integer)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="RESTRICT"))
+    note: Mapped[str | None] = mapped_column(String(300))
+    uploaded_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+    template: Mapped[CompanyTemplate] = relationship(back_populates="versions")
+    document: Mapped[Document] = relationship()
+
+    __table_args__ = (UniqueConstraint("template_id", "version", name="uq_company_template_version"),)
