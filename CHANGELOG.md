@@ -4,6 +4,62 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [2.0.0] - 2026-11-28
+
+Version 2 turns the Team Hub from a record keeper into an assistant that runs the routine work on its own.
+Major version because document numbers change format (see Changed) and clients now get emails automatically.
+
+### Added
+- **Notification bell with an unread count** for every user. Events reach the right person: a new, cancelled
+  or accepted Task Order and payouts reach the team member; confirmations, submissions, payment requests,
+  reminders and reports reach the founder. Mark one or all as read. The same unread reminder is refreshed,
+  never stacked. Read notifications are cleared after 180 days.
+- **Saxs Assistant** on both overviews: what needs doing next (payment requests, payouts due, reviews, overdue
+  invoices, final notices, unanswered quotations and proposals, offers about to close), with a button to the
+  screen where it is done, plus the company's compliance deadlines (provisional tax, CIPC annual return,
+  financial statements, ITR14, PAIA report, B-BBEE affidavit). Rule-based, free, nothing leaves the server.
+- **Autopilot for clients** (switches in Settings, on by default):
+  - Payment reminders: 3 days before an invoice is due, then 1, 7 and 14 days after, each sent once, with the
+    invoice attached. The final notice tells the founder to decide on a letter of demand.
+  - Monthly statements of account (SP-SOA) on the 1st to every client who owes money.
+  - Each client can be switched off individually.
+- **Statements of account** (SP-SOA): open invoices, an age analysis (current, 1-30, 31-60, 61-90, 90+ days),
+  recent payments and the balance due. Preview, or number, store and email from the client's page.
+- **Monthly finance report** (new Reports page, PDF): invoiced excluding and including VAT, credit notes,
+  money received, payouts and costs, net cash, open and overdue invoices, invoiced per client and the VAT
+  position. Last month's report is emailed to the founder on the 1st.
+- **VAT tracker** on the founder overview: taxable supplies in the last 12 months against the R2.3 million
+  compulsory threshold (and the R120 000 voluntary threshold), with what to do when it is close or passed.
+- **Proposals** (SP-PRO, new page): pick a client and a service (website, web system, Android app, online shop,
+  automation, monthly support or custom) and the hub writes the first draft: introduction, need, solution,
+  scope, timeline and why SaxsProjects. Prices start at R0.00 and must be set before issuing. Issued proposals
+  are signed and stored; accepted ones become a draft quotation with the same lines.
+- **Certificates** (SP-CERT, new page) for anything the company certifies: completion, achievement,
+  appreciation, participation, recognition, training, service, project completion, partnership or custom.
+  One official design, the director's signature, and a public verification page (`/verify/<code>`) that says
+  whether a certificate is genuine and still valid. Certificates can be revoked, never edited.
+- **Clients without a registration number**: the client type (company, sole proprietor, individual, NPO,
+  government, other), an optional client VAT number (printed on documents) and a reminders switch.
+- **Company logo as the default profile picture** until a person uploads their own.
+- **"How this was worked out"** on every payout in the founder's payouts screen.
+- CI check that no database update drops tables or columns or deletes rows (`scripts/check_migrations.py`).
+
+### Changed
+- **Document numbers are continuous and never reset**: SP-INV-0001, SP-INV-0002 ... SP-INV-10000 and on, with
+  no year in the number. New numbers carry on after the ones already issued, so nothing repeats.
+- **Every quotation, invoice and proposal shows the amount excluding VAT, the VAT and the amount including
+  VAT**. Until the company is a VAT vendor the VAT line reads "VAT 0% (not registered)".
+
+### Security
+- The bell and the assistant follow the same rules as the rest of the hub: a founder account needs two-factor
+  on, and a team member only ever sees their own items.
+
+### Upgrading
+- The database update (`9c4e2a7b1d3f`) only adds columns and tables; existing records are unchanged.
+- Client emails start with the next daily job after deployment. Each overdue invoice gets only the reminder
+  for the stage it has reached (not every earlier one). Switch "Autopilot" off in Settings first if you want
+  to review clients before any email goes out.
+
 ## [1.9.0] - 2026-11-28
 
 ### Added

@@ -72,7 +72,7 @@ Sessions are 60-minute tokens. Changing or resetting a password, or turning a me
 
 ## Finance: quotations, invoices, receipts and credit notes
 
-- **Numbers** (`SP-Q-`, `SP-INV-`, `SP-R-`, `SP-CN-`, `SP-PS-YYYY-NNN`) come from `document_sequences`. The row is locked while a number is taken, inside the same transaction as the document, so numbers never repeat and a failed request never leaves a gap. The counter restarts each year. `tests/test_numbering_postgres.py` issues 50 invoices in parallel against PostgreSQL to prove it.
+- **Numbers** (`SP-Q-0001`, `SP-INV-`, `SP-R-`, `SP-CN-`, `SP-PS-`, `SP-TO-`, `SP-OFF-`, `SP-PRO-`, `SP-SOA-`, `SP-CERT-`) come from `document_sequences`. The row is locked while a number is taken, inside the same transaction as the document, so numbers never repeat and a failed request never leaves a gap. Since v2.0 the counter is continuous and never resets (no year in the number); it starts after the numbers issued under the old yearly scheme. `tests/test_numbering_postgres.py` issues 50 invoices in parallel against PostgreSQL to prove it.
 - **Drafts** can be edited or deleted. They have no number, their PDF is a preview with a DRAFT watermark, and they are never signed.
 - **Issuing** assigns the number, renders the PDF once, and stores it in `documents` with its SHA-256. Later downloads return exactly those bytes. Issued documents cannot be changed (HTTP 409): an invoice is corrected with a credit note.
 - **Money** is integer cents. VAT is added only once `COMPANY_VAT_NUMBER` is set (then invoices say TAX INVOICE). Payouts are calculated on money received excluding VAT.
@@ -162,3 +162,11 @@ One request per screen, aggregated in the database:
 ## Backups
 
 `scripts/backup.py` writes an encrypted, authenticated logical backup (gzip JSON + Fernet), taken from one database snapshot. `verify` checks a file without a database; `restore` loads into an empty database migrated to the same revision, in one transaction, and moves the id sequences past the restored rows. CI restores a backup into a fresh PostgreSQL database on every change. See `docs/deploy.md` for the monthly routine.
+
+## v2.0 additions
+
+- **Notifications** (`app/notifications.py`, `/api/notifications`): rows saved with the change that caused them (the caller commits); background tasks use `notify_detached`. `notify_admin` writes the bell entry and then the email; the email switches never hide the bell entry.
+- **Client follow-ups** (`app/client_finance.py`): reminder stages 1-4, monthly statements and the monthly report, all run by `POST /api/jobs/daily`. Founder switches `client_reminders` and `client_statements` live in `User.notify_prefs`.
+- **VAT tracker** (`app/vat.py`): issued invoices in the last 365 days, excluding VAT and less credit notes, against `VAT_COMPULSORY_THRESHOLD_CENTS` (R2.3m) and `VAT_VOLUNTARY_THRESHOLD_CENTS` (R120k).
+- **Proposals** (`app/proposals.py`, `/api/proposals`), **certificates** (`app/certificates.py`, `/api/certificates`, public `/verify/<code>`), **reports** (`/api/reports/finance`), **assistant** (`app/assistant.py`, `/api/assistant`).
+- **Migration safety**: `python -m scripts.check_migrations` (CI) refuses an `upgrade()` that drops tables or columns or deletes rows unless the line says `# data-safe: <why>`.

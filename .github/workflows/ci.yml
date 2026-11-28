@@ -40,6 +40,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/teamhub
         run: |
+          python -m scripts.check_migrations
           alembic upgrade head
           alembic check
           python -m scripts.check_db_guards
