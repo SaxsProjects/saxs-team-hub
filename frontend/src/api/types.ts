@@ -615,3 +615,20 @@ export interface Enquiry {
   client_id: number | null;
   created_at: string;
 }
+
+export type ApiKeyScope = "clients:read" | "quotations:read" | "invoices:read" | "enquiries:read" | "proposals:draft";
+
+export interface ApiKey {
+  id: number;
+  name: string;
+  prefix: string;
+  scopes: ApiKeyScope[];
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface NewApiKey extends ApiKey {
+  key: string;
+}

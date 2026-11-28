@@ -22,6 +22,7 @@ from .routers import (
     devices,
     enquiries,
     finance,
+    integrations,
     me,
     notifications,
     offers,
@@ -96,6 +97,8 @@ def create_app() -> FastAPI:
         enquiries,
     ):
         app.include_router(module.router)
+    app.include_router(integrations.admin_router)
+    app.include_router(integrations.router)
     app.include_router(offers.public)
     app.include_router(pages.router)
 

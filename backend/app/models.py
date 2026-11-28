@@ -801,3 +801,22 @@ class Enquiry(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (CheckConstraint("status IN ('new', 'contacted', 'converted', 'closed')", name="ck_enquiry_status"),)
+
+
+class ApiKey(Base):
+    """A key another SaxsProjects system (such as SAXI-OS) uses to call the Team Hub's integration API.
+
+    Only a SHA-256 hash is stored; the key is shown once when it is made. Scopes limit what it can do, and no
+    scope can issue documents, record payments or move money: those stay with the founder in the hub."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    prefix: Mapped[str] = mapped_column(String(16))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[list] = mapped_column(JSON, default=list)
+    created_by: Mapped[str] = mapped_column(String(320))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
