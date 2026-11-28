@@ -4,6 +4,23 @@ All notable changes to the SaxsProjects Team Hub. Versions follow [Semantic Vers
 MAJOR for changes that break how people or data work, MINOR for new features, PATCH for fixes.
 Each release is tagged `vX.Y.Z` and published on GitHub Releases with its packages.
 
+## [2.1.0] - 2026-11-28
+
+### Added
+- **Website enquiries** (new "Enquiries" page). The contact form on saxsprojects.co.za can send messages straight
+  into the Team Hub: they ring the founder's bell, are emailed to the founder, and show on the assistant until
+  answered. Reply by email, phone or WhatsApp from the enquiry, mark it contacted or closed, or "Make client"
+  to create the client record in one step. Only the website's own address may post, at most 5 messages per
+  10 minutes per visitor, with a hidden field that quietly drops bot posts.
+- **Discord alerts** (optional). Set `DISCORD_WEBHOOK_URL` to a Discord channel webhook and every founder
+  notification is also posted there. Only the title and a link are sent; the details stay in the Team Hub.
+- A "Website enquiries" email switch in Settings.
+
+### Upgrading
+- Database update `a7d3e9b5c2f1` only adds the `enquiries` table.
+- New optional settings: `WEBSITE_ORIGINS` (defaults to the two saxsprojects.co.za addresses) and
+  `DISCORD_WEBHOOK_URL` (empty means off).
+
 ## [2.0.0] - 2026-11-28
 
 Version 2 turns the Team Hub from a record keeper into an assistant that runs the routine work on its own.

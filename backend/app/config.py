@@ -50,6 +50,10 @@ class Settings(BaseSettings):
 
     # Who gets notified about offer activity.
     admin_notify_email: str = ""
+    # The company website may post contact-form enquiries to /api/public/enquiries (comma-separated origins).
+    website_origins: str = "https://www.saxsprojects.co.za,https://saxsprojects.co.za"
+    # Optional Discord channel webhook: founder notifications are also posted there (title and link only).
+    discord_webhook_url: str = ""
 
     # Outgoing email. Resend (HTTPS API) is used when RESEND_API_KEY is set; hosts such as Render's free
     # plan block outgoing SMTP ports, but not HTTPS. Otherwise SMTP (Zoho Mail: smtppro.zoho.com /
@@ -178,6 +182,10 @@ class Settings(BaseSettings):
             digest = base64.urlsafe_b64encode(bytes.fromhex(cert)).decode().rstrip("=")
             origins.append(f"android:apk-key-hash:{digest}")
         return origins
+
+    @property
+    def website_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.website_origins.split(",") if o.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -413,6 +413,7 @@ export interface NotificationPrefs {
   reviews: boolean;
   payouts: boolean;
   invoices: boolean;
+  enquiries: boolean;
   client_reminders: boolean;
   client_statements: boolean;
 }
@@ -597,4 +598,20 @@ export interface StatementResult {
   number: string;
   document_id: number;
   emailed: boolean;
+}
+
+export type EnquiryStatus = "new" | "contacted" | "converted" | "closed";
+
+export interface Enquiry {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  organisation: string | null;
+  service: string | null;
+  message: string;
+  source: string;
+  status: EnquiryStatus;
+  client_id: number | null;
+  created_at: string;
 }

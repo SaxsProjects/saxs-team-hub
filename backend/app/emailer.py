@@ -140,6 +140,32 @@ def notify_enabled(db, kind: str) -> bool:
     return not (prefs and prefs.get(kind) is False)
 
 
+def post_to_discord(title: str, link: str | None = None) -> None:
+    """Post a one-line alert to the founder's Discord channel, if a webhook is set. Runs in the background and
+    never raises. Only the title and a link go to Discord: details stay in the Team Hub."""
+    url = get_settings().discord_webhook_url.strip()
+    if not url.startswith("https://discord.com/api/webhooks/"):
+        return
+    import json
+    import threading
+    import urllib.request
+
+    from .services import link as hub_link
+
+    content = title[:300] + (chr(10) + hub_link(link) if link else "")
+
+    def send() -> None:
+        try:
+            body = json.dumps({"content": content, "allowed_mentions": {"parse": []}}).encode()
+            headers = {"Content-Type": "application/json", "User-Agent": "SaxsTeamHub"}
+            req = urllib.request.Request(url, data=body, headers=headers)  # noqa: S310 - url checked to be a discord.com https webhook above
+            urllib.request.urlopen(req, timeout=8).close()  # noqa: S310
+        except Exception:
+            log.warning("Discord alert failed: %s", title)
+
+    threading.Thread(target=send, daemon=True).start()
+
+
 def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None, link: str | None = None) -> None:
     """Email the founder and put the same message in the notification bell.
 
@@ -155,6 +181,7 @@ def notify_admin(subject: str, text: str, *, kind: str | None = None, db=None, l
     except Exception:  # the bell must never break the action that triggered it
         log.exception("Could not save the in-app notification: %s", subject)
     settings = get_settings()
+    post_to_discord(subject, link)
     if kind and db is not None and not notify_enabled(db, kind):
         log.info("Admin notification switched off (%s): %s", kind, subject)
         return

@@ -17,6 +17,7 @@ const NOTIFICATIONS: { key: keyof NotificationPrefs; title: string; sub: string 
   { key: "reviews", title: "Task Order reviews", sub: "Submissions waiting past the review deadline" },
   { key: "payouts", title: "Payout reminders", sub: "Payment requests and payouts that are due" },
   { key: "invoices", title: "Invoice reminders", sub: "Invoices past their due date" },
+  { key: "enquiries", title: "Website enquiries", sub: "A new message from the contact form on saxsprojects.co.za" },
   {
     key: "client_reminders",
     title: "Autopilot: client payment reminders",

@@ -43,6 +43,9 @@ services:
         sync: false
       - key: ADMIN_NOTIFY_EMAIL
         sync: false
+      # Optional: a Discord channel webhook for founder alerts (title and link only). Leave unset for none.
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
       # Email goes out over HTTPS through Resend: Render's free plan blocks outgoing SMTP ports.
       - key: RESEND_API_KEY
         sync: false
