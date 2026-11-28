@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { api, post } from "../api/client";
 import type { MemberOverview, MyProject, OnboardingItem, Payout, TaskOrder } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
+import { AssistantPanel } from "../components/Assistant";
 import { ErrorNote, Skeleton, StatCard } from "../components/ui";
 import { firstName, greeting, longDate, percent, rands, shortDate } from "../lib/format";
 import "./overview.css";
@@ -70,6 +71,8 @@ export function MyWorkspace() {
         </Link>
       </div>
       {!!actionError && <ErrorNote error={actionError} />}
+
+      <AssistantPanel limit={4} />
 
       <div className="grid-2-1">
         <section className="card focus-card">

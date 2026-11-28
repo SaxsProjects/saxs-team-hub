@@ -1,5 +1,8 @@
 import {
+  Award,
+  FileBarChart,
   FileClock,
+  FileSignature,
   FileStack,
   FileText,
   Folder,
@@ -26,8 +29,11 @@ export const FOUNDER_NAV: NavItem[] = [
   { to: "/team", label: "Team & offers", title: "Team & offers", icon: Users },
   { to: "/projects", label: "Projects", title: "Projects", icon: Folder },
   { to: "/task-orders", label: "Task Orders", title: "Task Orders", icon: SquareCheck, badgeKey: "reviews" },
+  { to: "/proposals", label: "Proposals", title: "Proposals", icon: FileSignature },
   { to: "/finance", label: "Client finance", title: "Client finance", icon: FileText },
   { to: "/payouts", label: "Payouts", title: "Payouts", icon: Wallet },
+  { to: "/reports", label: "Reports", title: "Reports", icon: FileBarChart },
+  { to: "/certificates", label: "Certificates", title: "Certificates", icon: Award },
   { to: "/templates", label: "Templates", title: "Company templates", icon: FileStack },
   { to: "/audit", label: "Audit history", title: "Audit history", icon: FileClock },
 ];

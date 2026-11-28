@@ -170,14 +170,14 @@ function Notifications({ isAdmin }: { isAdmin: boolean }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const list = useQuery({
-    queryKey: ["notifications"],
+    queryKey: ["bell"],
     queryFn: () => api<NotificationList>("/api/notifications?limit=20"),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
   const unread = list.data?.unread ?? 0;
-  const items = list.data?.items ?? [];
-  const refresh = () => qc.invalidateQueries({ queryKey: ["notifications"] });
+  const items = Array.isArray(list.data?.items) ? list.data.items : [];
+  const refresh = () => qc.invalidateQueries({ queryKey: ["bell"] });
   const readOne = useMutation({ mutationFn: (id: number) => post("/api/notifications/read", { ids: [id] }), onSettled: refresh });
   const readAll = useMutation({ mutationFn: () => post("/api/notifications/read-all"), onSettled: refresh });
   const label = unread ? `Notifications: ${unread} unread` : "Notifications";

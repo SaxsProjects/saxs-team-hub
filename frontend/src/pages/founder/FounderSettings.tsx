@@ -17,6 +17,16 @@ const NOTIFICATIONS: { key: keyof NotificationPrefs; title: string; sub: string 
   { key: "reviews", title: "Task Order reviews", sub: "Submissions waiting past the review deadline" },
   { key: "payouts", title: "Payout reminders", sub: "Payment requests and payouts that are due" },
   { key: "invoices", title: "Invoice reminders", sub: "Invoices past their due date" },
+  {
+    key: "client_reminders",
+    title: "Autopilot: client payment reminders",
+    sub: "Emails each client a reminder 3 days before an invoice is due, then 1, 7 and 14 days after (once each), with the invoice attached",
+  },
+  {
+    key: "client_statements",
+    title: "Autopilot: monthly statements",
+    sub: "On the 1st, emails a statement of account (SP-SOA) to every client who owes money",
+  },
 ];
 
 type CompanyField = {
@@ -229,7 +239,7 @@ function NotificationsCard() {
       <div className="card-head">
         <h3 className="card-title">Notifications</h3>
         <span className={`th-note ${status && !save.isPending ? "success-text" : ""}`} role="status" aria-live="polite">
-          {save.isPending ? "Saving…" : (status ?? "Emailed to you")}
+          {save.isPending ? "Saving…" : (status ?? "Emails to you and your clients; the bell always shows everything")}
         </span>
       </div>
       <div className="form-card">
