@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     company_bank_account_type: str = ""
 
     vat_rate_bp: int = 1500  # 15% South African VAT, used only when company_vat_number is set
+    # VAT registration thresholds (VAT Act s23, amounts from 1 April 2026): compulsory once taxable supplies
+    # exceed R2.3 million in 12 months; voluntary registration possible from R120 000.
+    vat_compulsory_threshold_cents: int = 230_000_000
+    vat_voluntary_threshold_cents: int = 12_000_000
     quote_valid_days: int = 30
     invoice_due_days: int = 7
     deposit_percent: int = 50

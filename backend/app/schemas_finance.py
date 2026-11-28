@@ -8,11 +8,16 @@ from pydantic import BaseModel, EmailStr, Field
 from .schemas import ORM, PayoutOut
 
 Cents = int
+ClientKind = Literal["company", "sole_proprietor", "individual", "npo", "government", "other"]
 
 
 class ClientIn(BaseModel):
     name: str = Field(min_length=2, max_length=200)
+    kind: ClientKind = "company"
+    # Optional: individuals, sole proprietors and informal businesses have no registration number.
     registration_number: str | None = Field(default=None, max_length=64)
+    vat_number: str | None = Field(default=None, max_length=32)
+    reminders_enabled: bool = True
     contact_name: str | None = Field(default=None, max_length=200)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=40)
@@ -21,7 +26,10 @@ class ClientIn(BaseModel):
 
 class ClientUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=200)
+    kind: ClientKind | None = None
     registration_number: str | None = Field(default=None, max_length=64)
+    vat_number: str | None = Field(default=None, max_length=32)
+    reminders_enabled: bool | None = None
     contact_name: str | None = Field(default=None, max_length=200)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, max_length=40)
@@ -31,7 +39,10 @@ class ClientUpdate(BaseModel):
 class ClientOut(ORM):
     id: int
     name: str
+    kind: str
     registration_number: str | None
+    vat_number: str | None
+    reminders_enabled: bool
     contact_name: str | None
     email: str | None
     phone: str | None

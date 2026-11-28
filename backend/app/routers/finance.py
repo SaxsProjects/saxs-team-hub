@@ -179,9 +179,20 @@ def list_clients(db: Session = Depends(get_db), _: User = Depends(require_admin)
     return db.scalars(select(Client).order_by(Client.name)).all()
 
 
+def _clean_client_fields(values: dict) -> dict:
+    """Blank optional fields are stored as empty (NULL), never as spaces; required flags are never set to null."""
+    for key in ("kind", "reminders_enabled"):
+        if key in values and values[key] is None:
+            values.pop(key)
+    for key in ("registration_number", "vat_number", "contact_name", "phone", "address"):
+        if isinstance(values.get(key), str):
+            values[key] = values[key].strip() or None
+    return values
+
+
 @router.post("/clients", response_model=ClientOut, status_code=201)
 def create_client(body: ClientIn, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
-    client = Client(**body.model_dump())
+    client = Client(**_clean_client_fields(body.model_dump()))
     db.add(client)
     db.flush()
     audit(db, admin.email, "client.create", "client", client.id)
@@ -197,7 +208,7 @@ def read_client(client_id: int, db: Session = Depends(get_db), _: User = Depends
 @router.patch("/clients/{client_id}", response_model=ClientOut)
 def update_client(client_id: int, body: ClientUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
     client = get_client(db, client_id)
-    changes = body.model_dump(exclude_unset=True)
+    changes = _clean_client_fields(body.model_dump(exclude_unset=True))
     if "name" in changes and not changes["name"]:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "name cannot be empty")
     for key, value in changes.items():

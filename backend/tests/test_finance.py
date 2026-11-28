@@ -440,7 +440,12 @@ def test_continuous_numbers_start_after_the_old_yearly_numbers_and_never_reset()
 
     with SessionLocal() as db:
         # Before v2.0: 3 invoices in 2026 and 2 in 2027 under the yearly scheme.
-        db.add_all([DocumentSequence(doc_type="INV", year=2026, last_number=3), DocumentSequence(doc_type="INV", year=2027, last_number=2)])
+        db.add_all(
+            [
+                DocumentSequence(doc_type="INV", year=2026, last_number=3),
+                DocumentSequence(doc_type="INV", year=2027, last_number=2),
+            ]
+        )
         db.flush()
         assert allocate_number(db, "INV") == "SP-INV-0006"
         row = db.get(DocumentSequence, ("INV", 0))

@@ -26,6 +26,7 @@ from .routers import (
     pages,
     people,
     projects,
+    reports,
     task_orders,
     templates,
 )
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
         avatars,
         templates,
         notifications,
+        reports,
     ):
         app.include_router(module.router)
     app.include_router(offers.public)

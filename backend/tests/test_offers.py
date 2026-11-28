@@ -173,6 +173,10 @@ def test_jobs_endpoint_requires_token(client):
         "payouts_due",
         "task_reviews_overdue",
         "people_purged",
+        "client_reminders_sent",
+        "statements_sent",
+        "monthly_report_sent",
+        "notifications_purged",
     }
 
 

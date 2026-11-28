@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .client_finance import send_client_reminders, send_monthly_report, send_monthly_statements
 from .config import get_settings
 from .emailer import notify_admin
 from .models import Invoice, Offer, Payout, Person, ProjectContributor, Quotation, TaskOrder, User
@@ -130,6 +131,9 @@ def run_daily(db: Session) -> dict:
         "payouts_due": remind_due_payouts(db),
         "task_reviews_overdue": remind_overdue_reviews(db),
         "people_purged": apply_retention(db),
+        "client_reminders_sent": send_client_reminders(db),
+        "statements_sent": send_monthly_statements(db),
+        "monthly_report_sent": send_monthly_report(db),
         "notifications_purged": purge_old(db),
     }
     db.commit()  # the bell entries created by the reminders above

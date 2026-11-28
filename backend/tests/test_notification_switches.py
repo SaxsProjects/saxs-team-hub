@@ -32,7 +32,14 @@ def _overdue_invoice():
 def test_notifications_default_on_and_need_admin(client, admin):
     r = client.get("/api/auth/notifications", headers=admin)
     assert r.status_code == 200
-    assert r.json() == {"offers": True, "reviews": True, "payouts": True, "invoices": True}
+    assert r.json() == {
+        "offers": True,
+        "reviews": True,
+        "payouts": True,
+        "invoices": True,
+        "client_reminders": True,
+        "client_statements": True,
+    }
     assert client.get("/api/auth/notifications").status_code == 401
 
 
